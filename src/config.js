@@ -26,6 +26,17 @@ const DEFAULTS = {
     userAgent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     extraArgs: [],
+    // 内存紧凑模式：
+    //   tune     合并同站渲染进程 + 低端设备模式 + 限制单页面 JS 堆（重启浏览器生效）
+    //   v8HeapMB 单个 renderer 的 JS 堆上限，0 = 不限制；页面报「内存不足」时调大
+    //   maxTabs  非锁定模式下，每个账号最多留几个标签页（每个标签一个 renderer，约 200–400MB）
+    //   gcMinutes 定时让页面做 GC / 释放缓存，0 = 关闭
+    memory: {
+      tune: true,
+      v8HeapMB: 1024,
+      maxTabs: 3,
+      gcMinutes: 10
+    },
     // 省资源：在浏览器里掐掉不需要的请求。默认全关，行为和以前一致
     resourceSaver: {
       enabled: false,

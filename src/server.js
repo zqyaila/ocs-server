@@ -1028,6 +1028,19 @@ server.listen(PORT, config.data.server.host || '0.0.0.0', () => {
   const saver = config.data.browser.resourceSaver || {};
   if (saver.enabled) logger.info('[省资源] 已开启：统计域名/第三方/图片等请求会被拦截');
   metrics.start(3000);
+
+  // 定时内存回收：挂一晚上不重启，渲染进程的缓存和临时对象会一直涨，
+  // 每 N 分钟让每个页面做一次 GC，后台页再施压释放缓存（0 = 关闭）
+  const gcMin = Math.max(0, Number((config.data.browser.memory || {}).gcMinutes));
+  if (gcMin > 0) {
+    logger.info(`[内存] 每 ${gcMin} 分钟回收一次页面内存（可在配置里调）`);
+    setInterval(() => {
+      for (const rt of runtimes.values()) {
+        if (!rt.host.running) continue;
+        rt.runner.reclaimMemory().catch(() => {});
+      }
+    }, gcMin * 60000).unref();
+  }
   if (config.data.server.autoRun) {
     logger.info('已开启自动运行，正在逐个启动用户');
     users.forEach((u) => {

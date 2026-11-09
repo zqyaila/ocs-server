@@ -337,19 +337,53 @@ class TaskRunner extends EventEmitter {
     }
   }
 
+  /** 非锁定模式下每个账号最多保留几个标签页（每个标签就是一个 renderer，约 200–400MB） */
+  maxTabs() {
+    const n = Number(this.config.data.browser && this.config.data.browser.memory && this.config.data.browser.memory.maxTabs);
+    if (!Number.isFinite(n) || n <= 0) return 3;
+    return Math.min(10, Math.max(1, Math.floor(n)));
+  }
+
   /** 关掉多余的标签页：点一晚上的链接能攒出十几个，每个都占几十 MB */
   trimTabs() {
+    const limit = this.maxTabs();
     const list = this.host.pages();
-    if (list.length <= 4) return;
-    let extra = list.length - 4;
-    const keep = new Set([this.page, ...this._pageStack.slice(0, 2)]);
+    if (list.length <= limit) return;
+    // 保留当前页 + 最近打开的历史页；超出的按打开顺序从旧到新关掉
+    const ordered = [this.page, ...this._pageStack].filter((p) => p && !p.isClosed());
+    const keep = new Set(ordered.slice(0, limit));
     for (const p of list) {
-      if (extra <= 0) break;
       if (keep.has(p)) continue;
       p.close().catch(() => {});
       this._pageStack = this._pageStack.filter((x) => x !== p);
-      extra -= 1;
     }
+  }
+
+  /**
+   * 定时内存回收：让每个页面的 V8 做一次 GC，后台页再触发一次内存压力，
+   * 把渲染缓存、图片解码缓存放掉。只看当前页不够——挂课页的 iframe 里
+   * 累积的临时对象才是大头。
+   */
+  async reclaimMemory() {
+    const pages = this.host.pages();
+    let done = 0;
+    for (const page of pages) {
+      if (!page || page.isClosed()) continue;
+      let cdp = null;
+      try {
+        cdp = await page.context().newCDPSession(page);
+        await cdp.send('HeapProfiler.collectGarbage').catch(() => {});
+        // 当前正在操作的页面只做 GC，不施压，避免答题时卡一下
+        if (page !== this.page) {
+          await cdp.send('Memory.simulatePressureNotification', { level: 'critical' }).catch(() => {});
+        }
+        done += 1;
+      } catch (e) {
+      } finally {
+        if (cdp) cdp.detach().catch(() => {});
+      }
+    }
+    return done;
   }
 
   /** 清理资源用：只留当前页面，其余标签全部关掉（每个标签几十 MB） */

@@ -750,6 +750,31 @@
         <textarea id="wrappers" rows="5" placeholder='[{"name":"题库A","url":"https://...","method":"post","type":"GM_xmlhttpRequest","contentType":"json","data":{"title":"${title}"},"handler":"return (res)=>[res.answer]"}]'></textarea>
       </div>
 
+      <div class="divider"></div>
+
+      <p class="section-title">内存</p>
+      <div class="field switch">
+        <input type="checkbox" id="memTune" />
+        <label for="memTune">紧凑模式（合并同站进程、限制单页面 JS 堆，重启浏览器后生效）</label>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>单页面 JS 堆上限（MB）</label>
+          <input id="memHeap" type="number" min="128" step="64" />
+          <div class="hint" style="margin-top:5px">0 = 不限制；页面提示「内存不足」时调大</div>
+        </div>
+        <div class="field">
+          <label>每个账号最多标签页</label>
+          <input id="memTabs" type="number" min="1" max="10" />
+          <div class="hint" style="margin-top:5px">锁定模式不受此限制</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>定时回收间隔（分钟，0 = 关闭）</label>
+        <input id="memGc" type="number" min="0" max="180" />
+        <div class="hint" style="margin-top:5px">到点让每个页面做一次 GC，后台页顺带释放渲染缓存</div>
+      </div>
+
     </div>
     <div class="footer">
       <button class="primary" id="btnSave">保存配置</button>
@@ -1645,6 +1670,12 @@ function fillConfig() {
   el('browserDpr').value = String(c.browser.deviceScaleFactor || 1);
   el('wrappers').value = JSON.stringify(c.answererWrappers || [], null, 2);
 
+  const mem = c.browser.memory || {};
+  el('memTune').checked = mem.tune !== false;
+  el('memHeap').value = mem.v8HeapMB ?? 1024;
+  el('memTabs').value = mem.maxTabs ?? 3;
+  el('memGc').value = mem.gcMinutes ?? 10;
+
   const sv = c.browser.resourceSaver || {};
   el('saverEnabled').checked = !!sv.enabled;
   el('saverTrackers').checked = sv.blockTrackers !== false;
@@ -1718,6 +1749,12 @@ el('btnSave').onclick = async () => {
         width: m ? Number(m[1]) : (cur.width || 1280),
         height: m ? Number(m[2]) : (cur.height || 800),
         deviceScaleFactor: Number(el('browserDpr').value) || 1,
+        memory: {
+          tune: el('memTune').checked,
+          v8HeapMB: Math.max(0, Number(el('memHeap').value) || 0),
+          maxTabs: Math.min(10, Math.max(1, Number(el('memTabs').value) || 3)),
+          gcMinutes: Math.max(0, Number(el('memGc').value) || 0)
+        },
         resourceSaver: {
           enabled: el('saverEnabled').checked,
           blockTrackers: el('saverTrackers').checked,

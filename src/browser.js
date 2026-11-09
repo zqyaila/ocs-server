@@ -86,7 +86,8 @@ class BrowserHost {
 
   buildArgs() {
     const c = this.config.data.browser;
-    return [
+    const mem = c.memory || {};
+    const args = [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
@@ -103,9 +104,27 @@ class BrowserHost {
       '--no-default-browser-check',
       '--disable-blink-features=AutomationControlled',
       '--mute-audio',
-      `--window-size=${c.width},${c.height}`,
-      ...(c.extraArgs || [])
+      `--window-size=${c.width},${c.height}`
     ];
+
+    // 内存紧凑模式（默认开）：
+    // - process-per-site：同一站点共用一个 renderer，超星一堆 iframe 不会一个域名一个进程
+    // - disable-site-isolation-trials：跨站 iframe 也允许合并，进一步减少 renderer 数量
+    // - enable-low-end-device-mode：按低内存设备策略跑，栅格缓存和后台缓存都更小
+    // - js-flags：给单个 renderer 的 V8 堆封顶，防止挂一晚上涨到 1GB+
+    if (mem.tune !== false) {
+      args.push(
+        '--process-per-site',
+        '--disable-site-isolation-trials',
+        '--enable-low-end-device-mode'
+      );
+      const heap = Math.floor(Number(mem.v8HeapMB));
+      if (Number.isFinite(heap) && heap >= 128) {
+        args.push(`--js-flags=--max-old-space-size=${Math.min(heap, 4096)}`);
+      }
+    }
+
+    return [...args, ...(c.extraArgs || [])];
   }
 
   /**
@@ -205,6 +224,14 @@ class BrowserHost {
     await this.context.addInitScript({ content: wrapToDocumentIdle(this.userscript) });
 
     this.logger.info(`[浏览器] 已启动 ${executablePath}（${c.headless ? '无头' : '有头'}，软解）`);
+    const mem = c.memory || {};
+    if (mem.tune !== false) {
+      const heap = Math.floor(Number(mem.v8HeapMB));
+      this.logger.info(
+        `[内存] 紧凑模式：同站进程合并${heap >= 128 ? `，单页面 JS 堆上限 ${heap}MB` : ''}，` +
+          `每个账号最多 ${Math.min(10, Math.max(1, Number(mem.maxTabs) || 3))} 个标签页`
+      );
+    }
     return this.context;
   }
 
