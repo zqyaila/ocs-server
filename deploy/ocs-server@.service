@@ -1,0 +1,23 @@
+[Unit]
+Description=OCS 挂课服务（实例 %i）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ocs-server
+# 端口等参数写在这里，一个实例一份
+EnvironmentFile=/etc/ocs-server/%i.env
+# 每个实例独立的浏览器数据目录：cookie、任务、AI 配置都在里面
+Environment=OCS_DATA_DIR=/opt/ocs-data/%i
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+# 退出时连同 Chromium 子进程一起收掉，避免残留占内存
+KillMode=control-group
+TimeoutStopSec=20
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,2607 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234c8dff'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='white' font-family='sans-serif'%3EO%3C/text%3E%3C/svg%3E" />
+<title>OCS 用户控制台</title>
+<style>
+  :root{
+    color-scheme: dark;
+    /* 中性近黑灰阶：层级靠明度与 1px 边框，不靠阴影 */
+    --bg:#08090a;
+    --surface:#111418;
+    --surface-2:#161a1e;
+    --surface-3:#1d2227;
+    --surface-4:#262c32;
+    --line:#2a3037;
+    --line-soft:#1e2328;
+    --line-strong:#363d45;
+
+    --text:#e8eaed;
+    --text-2:#b4bcc5;
+    --muted:#7d8792;
+    --faint:#59636d;
+
+    /* 强调色只用于焦点、运行态、链接，面积很小 */
+    --accent:#8ea8ff;
+    --accent-soft:rgba(142,168,255,.12);
+    --accent-line:rgba(142,168,255,.28);
+
+    --ok:#4ade80;
+    --warn:#fbbf24;
+    --err:#f87171;
+
+    --r-lg:12px; --r-md:9px; --r-sm:6px;
+    --focus:0 0 0 3px rgba(142,168,255,.2);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1100px 520px at 50% -12%, rgba(142,168,255,.055), transparent 72%),
+      var(--bg);
+    color:var(--text);
+    font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  ::selection{background:rgba(142,168,255,.28)}
+  button,input,select,textarea{font:inherit;color:inherit}
+  h1,h2,p{margin:0}
+
+  /* ---------- 按钮：三档层级 + 图标 ---------- */
+  button{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    height:34px;padding:0 13px;border-radius:var(--r-md);
+    background:var(--surface-2);border:1px solid var(--line);
+    color:var(--text-2);font-size:13px;font-weight:500;line-height:1;
+    white-space:nowrap;flex-shrink:0;cursor:pointer;
+    transition:background .14s,border-color .14s,color .14s;
+  }
+  button:hover{background:var(--surface-3);border-color:var(--line-strong);color:var(--text)}
+  button:active{background:var(--surface-4)}
+  button:focus-visible{outline:none;box-shadow:var(--focus)}
+  button:disabled{opacity:.35;cursor:not-allowed;background:var(--surface-2)!important;color:var(--text-2)!important;border-color:var(--line)!important}
+
+  button.primary{
+    background:#eceef1;border-color:#eceef1;color:#0a0b0c;font-weight:600;
+    box-shadow:0 1px 0 rgba(255,255,255,.06) inset;
+  }
+  button.primary:hover{background:#fff;border-color:#fff;color:#000}
+  button.primary:active{background:#d9dce0}
+
+  button.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+  button.ghost:hover{background:var(--surface-3);color:var(--text)}
+
+  button.danger{background:transparent;border-color:transparent;color:#dd9b9a}
+  button.danger:hover{background:rgba(248,113,113,.1);color:#ffb4b4}
+
+  button.icon{width:30px;padding:0;font-size:14px}
+  button.sm{height:28px;padding:0 10px;font-size:12px}
+
+  /* ---------- 表单 ---------- */
+  input,select,textarea{
+    width:100%;height:34px;padding:0 11px;
+    background:#0b0d10;border:1px solid #343b43;border-radius:var(--r-md);
+    font-size:13px;transition:border-color .14s,box-shadow .14s,background .14s;
+  }
+  textarea{height:auto;padding:9px 11px;line-height:1.6;resize:vertical;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+  input::placeholder,textarea::placeholder{color:var(--faint)}
+  input:hover,select:hover,textarea:hover{border-color:#414a53}
+  input:focus,select:focus,textarea:focus{
+    outline:none;border-color:var(--accent);background:#0b0d10;box-shadow:var(--focus)
+  }
+  input:disabled,select:disabled{opacity:.45}
+  select{
+    appearance:none;padding-right:30px;cursor:pointer;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5' fill='none' stroke='%2377818b' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 10px center;
+  }
+  input[type=checkbox]{
+    width:15px;height:15px;padding:0;accent-color:var(--accent);cursor:pointer;
+    background:none;border:0;flex-shrink:0
+  }
+  input[type=number]{font-variant-numeric:tabular-nums}
+
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#252a30;border-radius:8px;border:2px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-thumb:hover{background:#333a42;background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* ---------- 顶栏 ---------- */
+  header{
+    display:flex;align-items:center;gap:10px;height:56px;padding:0 18px;
+    border-bottom:1px solid var(--line);
+    background:rgba(8,9,10,.82);backdrop-filter:blur(12px);
+    position:sticky;top:0;z-index:20;
+  }
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .brand .mark{
+    width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+    background:#eceef1;color:#0a0b0c;font-size:12px;font-weight:800;flex-shrink:0;
+    letter-spacing:-.02em;
+  }
+  .brand h1{font-size:13.5px;font-weight:600;letter-spacing:.01em}
+  .brand small{display:block;font-size:11px;color:var(--faint);font-weight:400;line-height:1.3}
+
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;
+    border-radius:7px;border:1px solid var(--line);background:var(--surface-2);
+    font-size:11.5px;color:var(--muted);max-width:280px;overflow:hidden;flex:0 0 auto
+  }
+  .pill #taskText{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill.res{cursor:pointer;font-weight:400}
+  .pill.res:hover{background:var(--surface-3);color:var(--text);border-color:var(--line-strong)}
+  .pill.res b{font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
+  .pill.res.hot b{color:#f0c76e}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--faint);flex-shrink:0}
+  .dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(74,222,128,.14)}
+  .dot.busy{background:var(--warn);box-shadow:0 0 0 3px rgba(251,191,36,.14);animation:pulse 2s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .spacer{flex:1}
+
+  /* ---------- 布局 ---------- */
+  main{
+    display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);
+    gap:16px;padding:18px;align-items:start;
+  }
+  @media(max-width:1080px){main{grid-template-columns:1fr;padding:14px}}
+  .card{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--r-lg);overflow:hidden;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.028);
+  }
+  .card > .head{
+    display:flex;align-items:center;gap:10px;height:44px;padding:0 15px;
+    border-bottom:1px solid var(--line-soft);background:var(--surface-2);
+  }
+  .card > .head h2{
+    font-size:12px;font-weight:600;letter-spacing:.04em;color:var(--text-2)
+  }
+  .card > .body{padding:15px}
+  .count{
+    font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;
+    padding:1px 6px;border-radius:5px;background:var(--surface-3)
+  }
+  .card > .head.subhead{
+    height:36px;padding:0 14px;background:transparent;
+    border-top:1px solid var(--line-soft);border-bottom:none
+  }
+  .card > .head.subhead h2{font-size:11.5px;color:var(--muted);letter-spacing:.06em}
+
+  /* ---------- 新建用户 ---------- */
+  .add-box{display:grid;gap:9px}
+  .row{display:flex;gap:8px;align-items:center;min-width:0}
+  .row input{min-width:0}
+  .check{
+    display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
+    color:var(--muted);cursor:pointer;user-select:none;line-height:1.4
+  }
+  .check:hover{color:var(--text-2)}
+
+  /* ---------- 用户卡 ---------- */
+  .task{
+    position:relative;padding:11px 12px 9px 14px;border:1px solid var(--line-soft);
+    border-radius:10px;background:var(--surface-2);margin-bottom:8px;
+    transition:border-color .14s,background .14s;
+  }
+  .task:hover{border-color:var(--line-strong);background:#15181c}
+  .task::before{
+    content:"";position:absolute;left:0;top:11px;bottom:11px;width:2px;
+    border-radius:0 2px 2px 0;background:transparent
+  }
+  .task.running::before{background:var(--warn)}
+  .task.error::before{background:var(--err)}
+  .task.done::before{background:var(--ok);opacity:.6}
+  .task .line1{display:flex;align-items:center;gap:8px;min-width:0}
+  .task .line2{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:6px;min-width:0}
+  .task .name{
+    flex:1;min-width:0;font-weight:500;font-size:13px;color:var(--text);
+    display:flex;align-items:center;gap:6px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+  }
+  .task .url{
+    flex:1;min-width:0;font-size:11px;color:var(--faint);
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+  }
+  .task .acts{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;align-items:center}  .task-err{
+    margin-top:8px;padding:7px 9px;border-radius:6px;font-size:11.5px;line-height:1.5;
+    color:#e8b4b4;background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.16);
+    word-break:break-word
+  }
+  .task .acts button{
+    height:26px;padding:0 9px;font-size:12px;border-color:transparent;
+    background:transparent;color:#8d97a2
+  }
+  .task .acts button:hover{background:var(--surface-4);color:var(--text)}
+  .task .acts button.icon{width:26px;padding:0;font-size:12px}
+  .task .acts .run{background:var(--accent-soft);color:var(--accent);font-weight:500}
+  .task .acts .run:hover{background:rgba(142,168,255,.2);color:#b6c6ff}
+  .task .acts .ai.custom{background:var(--accent-soft);color:var(--accent)}
+  .task .acts .ai.custom:hover{background:rgba(142,168,255,.2);color:#b6c6ff}
+  .task .acts .win{color:#9aa6b8}
+  .task .acts .win.on:hover{background:rgba(248,113,113,.1);color:#ffb4b4}
+  .task .acts .danger:hover{background:rgba(248,113,113,.12);color:#ffb4b4}
+  .task.selected{border-color:var(--accent);background:rgba(142,168,255,.06)}
+  .task .addr-row{display:flex;gap:6px;margin-top:7px}
+  .task .task-addr{
+    flex:1;min-width:0;background:var(--surface-3);border:1px solid var(--line);
+    border-radius:6px;padding:6px 8px;color:var(--text);font-size:12px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  .task .task-addr:focus{outline:none;border-color:var(--accent)}
+  .task .go{flex:0 0 auto;padding:6px 11px;font-size:12px}
+
+  .lock-tag{
+    font-size:10px;padding:1px 5px;border-radius:4px;flex-shrink:0;font-weight:500;
+    background:rgba(251,191,36,.1);color:#e0b354;border:1px solid rgba(251,191,36,.2)
+  }
+  .saved-tag{
+    font-size:10px;padding:1px 5px;border-radius:4px;flex-shrink:0;font-weight:500;
+    background:rgba(74,222,128,.1);color:#84d9a4;border:1px solid rgba(74,222,128,.18)
+  }
+  .badge{
+    font-size:10.5px;padding:1px 6px;border-radius:5px;font-weight:500;
+    border:1px solid transparent;background:var(--surface-3);color:var(--muted);
+    white-space:nowrap;flex-shrink:0
+  }
+  .badge.running{color:#f0c76e;background:rgba(251,191,36,.12);border-color:rgba(251,191,36,.2)}
+  .badge.error{color:#f0a3a3;background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.16)}
+  .badge.done{color:#84d9a4;background:rgba(74,222,128,.1);border-color:rgba(74,222,128,.16)}
+  .badge.queued{color:#a9b8e8;background:rgba(142,168,255,.1);border-color:rgba(142,168,255,.16)}
+
+  .empty{
+    text-align:center;color:var(--faint);font-size:12.5px;
+    padding:26px 12px;border:1px dashed var(--line);border-radius:10px;
+    background:rgba(255,255,255,.008)
+  }
+  .hint{font-size:11.5px;color:var(--faint);line-height:1.6}
+
+  /* ---------- 画面 ---------- */
+  .screen-wrap{
+    position:relative;background:#050607;aspect-ratio:16/10;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .screen-wrap img{width:100%;height:100%;object-fit:contain;display:block;cursor:crosshair}
+  .screen-wrap .placeholder{
+    color:var(--faint);font-size:12.5px;text-align:center;padding:24px;line-height:1.9
+  }
+  .screen-tools{
+    position:absolute;top:10px;right:10px;display:flex;gap:6px;
+    opacity:.5;transition:opacity .18s
+  }
+  .screen-wrap:hover .screen-tools{opacity:1}
+  .screen-tools button{
+    height:28px;padding:0 10px;font-size:12px;
+    background:rgba(16,18,21,.86);backdrop-filter:blur(8px);
+    border-color:rgba(255,255,255,.1);color:var(--text-2)
+  }
+  .screen-tools button:hover{background:rgba(32,37,42,.96);color:#fff;border-color:rgba(255,255,255,.18)}
+  .screen-badge{
+    position:absolute;left:10px;top:10px;font-size:11px;padding:3px 9px;
+    border-radius:6px;background:rgba(16,18,21,.8);backdrop-filter:blur(8px);
+    color:var(--muted);border:1px solid rgba(255,255,255,.08)
+  }
+
+  /* ---------- 地址栏 ---------- */
+  .addr-bar{
+    display:flex;gap:6px;align-items:center;padding:8px 10px;
+    border-bottom:1px solid var(--line-soft);background:var(--surface-2)
+  }
+  .addr-bar .scheme{
+    font-size:10.5px;color:var(--faint);padding:0 2px 0 4px;flex-shrink:0;
+    letter-spacing:.04em
+  }
+  .addr-bar input{
+    height:30px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11.5px;background:#0a0c0e;color:var(--text-2)
+  }
+  .addr-bar input.edited{border-color:var(--accent-line);color:var(--text)}
+  .addr-bar button{height:30px;width:30px;padding:0;font-size:13px;background:transparent;border-color:transparent;color:var(--muted)}
+  .addr-bar button:hover{background:var(--surface-4);color:var(--text)}
+  .addr-bar #btnTab{
+    width:auto;min-width:34px;padding:0 6px;font-size:11px;
+    font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace
+  }
+  .addr-bar #btnTab.multi{color:var(--accent);background:rgba(142,168,255,.1)}
+
+  /* ---------- 日志 ---------- */
+  .logs{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+    height:210px;overflow:auto;background:#07080a;padding:10px 14px 14px;
+  }
+  .logs div{padding:1px 0;color:#9aa4ae;word-break:break-all;line-height:1.75}
+  .logs div.warn{color:#d8b878}
+  .logs div.error{color:#e69a9a}
+  .logs time{color:#3f4852;margin-right:9px;font-variant-numeric:tabular-nums}
+  .logs .log-tag{
+    display:inline-block;padding:0 5px;margin-right:6px;border-radius:4px;
+    background:var(--surface-4);color:#8b95a1;font-size:11px;
+  }
+
+  /* ---------- 窄屏 ---------- */
+  @media(max-width:720px){
+    header{height:auto;min-height:56px;flex-wrap:wrap;padding:10px 14px;gap:8px}
+    .brand{flex:1 1 auto;min-width:0}
+    .brand small{display:none}
+    .brand h1{font-size:13px;white-space:nowrap}
+    header .spacer{display:none}
+    header .pill{order:10;flex:1 1 auto;max-width:none;height:24px;font-size:11px}
+    header .pill.res{flex:0 0 auto;padding:0 8px;height:24px}
+    main{padding:12px}
+    .card > .body{padding:12px}
+    .add-box .row{flex-wrap:wrap}
+    .add-box .row input:not([type=checkbox]){flex:1 1 100%!important}
+    .add-box .row .check{flex:1 1 100%;margin-bottom:4px}
+    .add-box .row .spacer{display:none}
+    .add-box #btnAdd{width:100%}
+    .addr-bar .scheme{display:none}
+    .addr-bar button:nth-of-type(4){display:none}
+    .logs{height:180px}
+    .modal{padding:16px 10px}
+    .modal .box{max-height:calc(100vh - 32px)}
+    .modal .box > .body{padding:16px}
+    .lb-bar .where{max-width:34vw}
+  }
+
+  /* ---------- 放大层 ---------- */
+  .lightbox{
+    position:fixed;inset:0;z-index:200;background:rgba(3,4,5,.97);
+    display:none;align-items:center;justify-content:center;
+  }
+  .lightbox.show{display:flex}
+  .lightbox img{width:100%;height:100%;object-fit:contain;cursor:crosshair;display:block}
+  #toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,8px);background:rgba(28,32,38,.97);color:#e6eaef;
+    border:1px solid rgba(255,255,255,.13);border-radius:8px;padding:9px 15px;font-size:13px;line-height:1.4;
+    opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;z-index:9999;max-width:70vw}
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  .lb-bar{
+    position:absolute;left:50%;bottom:20px;transform:translateX(-50%);
+    display:flex;align-items:center;gap:7px;padding:7px 8px;
+    background:rgba(19,22,25,.94);border:1px solid var(--line);
+    border-radius:11px;box-shadow:0 18px 46px rgba(0,0,0,.6);
+    max-width:calc(100% - 32px)
+  }
+  .lb-bar button{height:30px;font-size:12px;padding:0 11px}
+  .lb-bar .where{
+    font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--muted);
+    max-width:44vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 8px
+  }
+  .lb-tip{
+    position:absolute;left:50%;top:18px;transform:translateX(-50%);
+    font-size:11.5px;color:var(--muted);background:rgba(19,22,25,.86);
+    border:1px solid var(--line-soft);padding:5px 13px;border-radius:8px;white-space:nowrap
+  }
+
+  /* ---------- 弹窗 ---------- */
+  .modal{
+    position:fixed;inset:0;background:rgba(3,4,5,.72);backdrop-filter:blur(4px);
+    display:none;align-items:flex-start;justify-content:center;
+    padding:44px 16px;overflow:auto;z-index:100
+  }
+  .modal.show{display:flex}
+  .modal .box{
+    background:#14171b;border:1px solid #333a42;border-radius:14px;
+    width:min(720px,100%);box-shadow:0 30px 80px rgba(0,0,0,.7);
+    display:flex;flex-direction:column;max-height:calc(100vh - 88px)
+  }
+  .modal .box > header{
+    position:static;height:58px;padding:0 20px;border-radius:14px 14px 0 0;
+    background:var(--surface-2);border-bottom:1px solid var(--line-soft)
+  }
+  .modal .box > header .mark{
+    background:var(--surface-3);color:var(--text-2);font-size:13px;
+    border:1px solid var(--line)
+  }
+  .modal .box > .body{overflow-y:auto;flex:1;min-height:0;padding:22px 24px 24px}
+  .section-title{
+    font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+    color:#98a2ac;margin:0 0 15px;display:flex;align-items:center;gap:8px
+  }
+  .section-title::before{
+    content:"";width:2px;height:12px;border-radius:2px;background:var(--accent);opacity:.75
+  }
+  .field{margin-bottom:17px}
+  .field > label{display:block;font-size:12px;color:var(--text-2);margin-bottom:6px;font-weight:500}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:560px){.grid2{grid-template-columns:1fr}}
+  .switch{display:flex;align-items:center;gap:9px}
+  .switch label{margin:0!important;font-size:12.5px!important;color:var(--text-2)!important;font-weight:400!important;cursor:pointer}
+  #uaiBody.off{opacity:.38;pointer-events:none}
+  .divider{height:1px;background:var(--line-soft);margin:24px 0 20px}
+  .modal .box > .footer{
+    display:flex;align-items:center;gap:12px;padding:13px 20px;
+    border-top:1px solid #2a3037;background:#181c21;
+    border-radius:0 0 14px 14px;flex-shrink:0
+  }
+
+  /* ---------- 资源面板 ---------- */
+  .res-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  @media(max-width:640px){.res-grid{grid-template-columns:1fr 1fr}}
+  .res-cell{
+    background:var(--surface-2);border:1px solid var(--line-soft);border-radius:10px;
+    padding:11px 12px;display:grid;gap:2px;min-width:0
+  }
+  .res-cell span{font-size:11px;color:var(--muted)}
+  .res-cell b{font-size:19px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .res-cell i{font-style:normal;font-size:10.5px;color:var(--faint);line-height:1.45}
+  .res-chart{margin:14px 0 6px;display:grid;gap:5px}
+  .res-chart canvas{width:100%;height:70px;display:block;background:#0a0c0e;border:1px solid var(--line-soft);border-radius:8px}
+  .res-chart em{font-style:normal}
+  .res-chart .c-node{color:var(--accent)}
+  .res-chart .c-chrome{color:#e0b354}
+  .res-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  .res-table th,.res-table td{padding:6px 8px;text-align:left;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+  .res-table th{font-size:10.5px;color:var(--faint);font-weight:500;letter-spacing:.04em}
+  .res-table td{color:var(--text-2);font-variant-numeric:tabular-nums}
+  .res-table td:first-child{color:var(--text);max-width:180px;overflow:hidden;text-overflow:ellipsis}
+  .res-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:16px}
+  .res-actions .check{font-size:12px}
+
+  /* ---------- 人脸核验 ---------- */
+  .pill.cam{position:relative}
+  .pill.cam.alert{border-color:rgba(251,191,36,.5);color:var(--warn);background:rgba(251,191,36,.1)}
+  .cam-badge{
+    position:absolute;top:-6px;right:-6px;min-width:16px;height:16px;padding:0 4px;
+    border-radius:9px;background:var(--err);color:#1a0d0d;
+    font-size:10px;font-weight:700;line-height:16px;text-align:center;
+  }
+  .modal .cam-box{width:min(900px,100%)}
+  .cam-wrap{display:grid;grid-template-columns:190px 1fr;gap:16px}
+  .cam-list{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow-y:auto}
+  .cam-item{
+    display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:var(--r-sm);
+    border:1px solid var(--line-soft);background:var(--surface-2);cursor:pointer;text-align:left;
+    height:auto;align-items:flex-start;
+  }
+  .cam-item:hover{border-color:var(--line-strong)}
+  .cam-item.active{border-color:var(--accent-line);background:var(--accent-soft)}
+  .cam-item b{font-size:12.5px;color:var(--text);font-weight:600}
+  .cam-item i{font-style:normal;font-size:11px;color:var(--muted)}
+  .cam-item .st{font-size:10.5px;letter-spacing:.03em}
+  .cam-item .st.pending{color:var(--warn)}
+  .cam-item .st.live{color:var(--ok)}
+  .cam-item .st.ended,.cam-item .st.refused{color:var(--faint)}
+  .cam-main{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .cam-stage{
+    position:relative;aspect-ratio:4/3;max-height:340px;border-radius:var(--r-md);
+    border:1px solid var(--line);background:#0a0c0e;overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .cam-stage img,.cam-stage video{width:100%;height:100%;object-fit:cover;display:none}
+  .cam-stage img.on,.cam-stage video.on{display:block}
+  .cam-empty{position:absolute;color:var(--faint);font-size:12px;text-align:center;padding:0 24px;line-height:1.8}
+  .cam-tag{
+    position:absolute;left:10px;top:10px;padding:2px 8px;border-radius:20px;
+    background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);
+    font-size:10.5px;color:var(--text-2);
+  }
+  .cam-tools{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between}
+  .cam-src,.cam-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .cam-acts{margin-left:auto}
+  .cam-tools button,.cam-tools .filebtn{white-space:nowrap;flex:0 0 auto}
+  .cam-gap{flex:1 1 auto;min-width:8px}
+  .filebtn{display:inline-flex;align-items:center;justify-content:center;height:34px;padding:0 13px;
+    border-radius:var(--r-md);border:1px solid var(--line);background:var(--surface-2);
+    color:var(--text-2);font-size:13px;font-weight:500;cursor:pointer}
+  .filebtn:hover{border-color:var(--line-strong);color:var(--text)}
+  .filebtn.disabled{opacity:.45;pointer-events:none}
+  .filebtn.playing{border-color:rgba(74,222,128,.4);color:var(--ok);background:rgba(74,222,128,.08)}
+  .cam-hint-warn{color:var(--warn)}
+  @media (max-width:720px){
+    .cam-wrap{grid-template-columns:1fr}
+    .cam-list{flex-direction:row;overflow-x:auto;max-height:none}
+    .cam-item{min-width:150px}
+    .cam-acts{margin-left:0}
+    .cam-tools .filebtn,.cam-tools button{padding:0 10px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="mark">O</div>
+    <div>
+      <h1>OCS 控制台</h1>
+      <small>多用户挂课 · 登录态各自保存</small>
+    </div>
+  </div>
+  <span class="pill" id="browserBadge"><span class="dot" id="browserDot"></span><span id="browserText">浏览器未启动</span></span>
+  <button class="pill res" id="resPill" title="查看内存 / CPU 占用，一键清理">
+    <span class="dot" id="resDot"></span><b id="resText">—</b>
+  </button>
+  <button class="pill cam" id="camPill" title="人脸核验：页面请求摄像头时，在这里给它画面">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <rect x="2.5" y="6.5" width="13" height="11" rx="2.5"/>
+      <path d="M15.5 11l5-3v8l-5-3z"/>
+    </svg>
+    <b id="camText">人脸核验</b>
+    <span class="cam-badge" id="camBadge" hidden>0</span>
+  </button>
+  <div class="spacer"></div>
+  <button id="btnConfig">配置</button>
+  <button class="danger" id="btnStop">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <rect x="6" y="6" width="12" height="12" rx="2.5"/>
+    </svg>
+    停止全部
+  </button>
+</header>
+
+<main>
+  <!-- 左：用户 -->
+  <section class="card">
+    <div class="head">
+      <h2>用户</h2>
+      <span class="count" id="taskCount"></span>
+    </div>
+    <div class="body">
+      <div class="add-box">
+        <div class="row">
+          <input id="newName" placeholder="用户名称，例如「张三」" />
+          <button class="primary" id="btnAdd">+ 新建用户</button>
+        </div>
+        <div class="hint" style="margin-top:2px">每个用户一个独立浏览器，登录态和历史各自保存，重启后不用重新登录。</div>
+      </div>
+      <div id="taskList"></div>
+    </div>
+  </section>
+
+  <!-- 右：画面 -->
+  <section class="card">
+    <div class="head">
+      <h2>实时画面</h2>
+      <div class="spacer"></div>
+      <label class="check" style="margin-right:4px"><input type="checkbox" id="live" checked /> 实时刷新</label>
+    </div>
+
+    <div class="screen-wrap" id="screenWrap">
+      <div class="placeholder">打开页面后这里显示实时画面<br />可直接点击画面完成扫码登录</div>
+      <div class="screen-tools">
+        <button id="btnShot">刷新</button>
+        <button id="btnDbl" title="对上一次点击的位置双击；没点过就双击页面中心">双击</button>
+        <button id="btnExpand">放大</button>
+      </div>
+    </div>
+
+    <div class="addr-bar">
+      <span class="scheme" id="focusName">未选择用户</span>
+      <input id="addr" placeholder="浏览器尚未打开页面" spellcheck="false" />
+      <button class="icon ghost" id="btnBack" title="后退">←</button>
+      <button class="icon ghost" id="btnReload" title="刷新页面">⟳</button>
+      <button class="icon ghost" id="btnTab" title="切换标签页：点了在新标签打开的链接后，用这里切回原来的页面">1/1</button>
+      <button class="icon ghost" id="btnCopy" title="复制地址">⧉</button>
+    </div>
+
+    <div class="body" style="padding:11px 12px">
+      <div class="row">
+        <input id="typeText" placeholder="输入文本（验证码 / 账号），回车即发送" />
+        <button id="btnType">输入</button>
+        <button id="btnEnter">回车</button>
+      </div>
+    </div>
+
+    <div class="head subhead">
+      <h2>运行日志</h2>
+      <div class="spacer"></div>
+      <button class="ghost sm" id="btnClearLogs">清空</button>
+    </div>
+    <div class="logs" id="logs"></div>
+  </section>
+</main>
+
+<!-- 放大层 -->
+<div class="lightbox" id="lightbox">
+  <img id="lbImg" alt="" />
+  <div class="lb-tip">滚轮 = 滚动页面　·　单击 = 点击页面　·　Esc 退出</div>
+  <div class="lb-bar">
+    <span class="where" id="lbWhere">—</span>
+    <button id="lbDbl" title="双击上一次点击的位置，没点过则双击页面中心">双击</button>
+    <button id="lbReload">刷新</button>
+    <button class="primary" id="lbClose">关闭</button>
+  </div>
+</div>
+
+<!-- 配置弹窗 -->
+<div class="modal" id="modal">
+  <div class="box">
+    <header>
+      <div class="brand">
+        <div><h1>配置</h1><small>保存后运行中的页面立即生效</small></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="ghost" id="btnCloseModal">关闭</button>
+    </header>
+    <div class="body">
+      <p class="section-title">AI 答题</p>
+      <div class="field switch">
+        <input type="checkbox" id="aiEnabled" />
+        <label for="aiEnabled">启用 AI 答题（没有题库也能自动答题）</label>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>服务商预设</label>
+          <select id="aiProvider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">OpenAI</option>
+            <option value="qwen">通义千问</option>
+            <option value="kimi">Kimi (Moonshot)</option>
+            <option value="zhipu">智谱 GLM</option>
+            <option value="siliconflow">硅基流动</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="ollama">本地 Ollama</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>模型名称</label>
+          <input id="aiModel" placeholder="deepseek-chat" />
+        </div>
+      </div>
+      <div class="field">
+        <label>接口地址</label>
+        <input id="aiBaseUrl" placeholder="https://api.deepseek.com/v1" />
+        <div class="hint" style="margin-top:5px">填到 /v1 即可，程序会自动补 /chat/completions</div>
+      </div>
+      <div class="field">
+        <label>API Key</label>
+        <input id="aiKey" type="password" placeholder="sk-..." />
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>温度</label>
+          <input id="aiTemp" type="number" step="0.1" min="0" max="2" />
+        </div>
+        <div class="field">
+          <label>最大回复长度</label>
+          <input id="aiMaxTokens" type="number" min="128" />
+        </div>
+      </div>
+      <div class="field switch">
+        <input type="checkbox" id="aiImages" />
+        <label for="aiImages">允许发送图片（模型需支持视觉）</label>
+      </div>
+      <div class="row">
+        <button id="btnTestAi">测试连接</button>
+        <span id="aiTestResult" class="hint"></span>
+      </div>
+      <div class="hint" style="margin-top:10px">
+        这里配的是<b>所有人的默认接口</b>。某个账号要用别家服务商或另一个 Key，关掉这个弹窗，
+        点那个用户卡片上的 <b>AI</b> 按钮单独配，互不影响。
+      </div>
+
+      <div class="divider"></div>
+
+      <p class="section-title">加密文字</p>
+      <div class="field">
+        <label>识别方式（超星自定义字体，题干变乱码时生效）</label>
+        <select id="cryptoTextMode">
+          <option value="font">字体特征比对（推荐：快，不消耗 token）</option>
+          <option value="ai">AI 视觉识别（把字形画成图让大模型读）</option>
+          <option value="auto">自动：先字体比对，失败或不确定转 AI</option>
+          <option value="off">不识别（乱码直接交给题库 / AI）</option>
+        </select>
+        <div class="hint" style="margin-top:5px">
+          AI 方式需要上面已启用 AI 且允许发送图片；每 24 个字一张图，约几秒、少量 token
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <p class="section-title">省资源</p>
+      <div class="field switch">
+        <input type="checkbox" id="saverEnabled" />
+        <label for="saverEnabled">不加载用不到的网页资源（重启浏览器后生效）</label>
+      </div>
+      <div class="grid2" style="gap:8px 12px">
+        <label class="check"><input type="checkbox" id="saverTrackers" /> 拦截统计 / 广告域名（安全）</label>
+        <label class="check"><input type="checkbox" id="saverThird" /> 拦截第三方域名资源</label>
+        <label class="check"><input type="checkbox" id="saverImages" /> 拦截图片（图片题会看不到）</label>
+        <label class="check"><input type="checkbox" id="saverFonts" /> 拦截字体（加密字自动放行）</label>
+        <label class="check"><input type="checkbox" id="saverMedia" /> 拦截音视频（挂课会停住）</label>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>额外拦截的域名（每行一个，含子域）</label>
+        <textarea id="saverBlocklist" rows="2" placeholder="example.com&#10;ads.example.net"></textarea>
+        <div class="hint" style="margin-top:5px">
+          默认只拦统计域名；拦截图片/字体/音视频会影响图片题、加密字和视频进度，按需勾选
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <p class="section-title">运行</p>
+      <div class="field switch">
+        <input type="checkbox" id="autoStart" />
+        <label for="autoStart">自动点击「开始学习」</label>
+      </div>
+      <div class="field switch">
+        <input type="checkbox" id="autoRun" />
+        <label for="autoRun">服务启动后自动执行队列</label>
+      </div>
+      <div class="field switch">
+        <input type="checkbox" id="resumeSession" />
+        <label for="resumeSession">启动后回到上次关闭时的页面（只开窗，不自动答题）</label>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>网页尺寸</label>
+          <input id="browserSize" placeholder="1280x800" />
+          <div class="hint" style="margin-top:5px">改完需重启服务</div>
+        </div>
+        <div class="field">
+          <label>渲染倍率</label>
+          <select id="browserDpr">
+            <option value="1">1x（默认，最省资源）</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x（放大后最清晰，更吃内存）</option>
+          </select>
+          <div class="hint" style="margin-top:5px">影响放大画面清晰度，需重启</div>
+        </div>
+      </div>
+      <div class="field">
+        <label>题库配置（JSON 数组，可留空）</label>
+        <textarea id="wrappers" rows="5" placeholder='[{"name":"题库A","url":"https://...","method":"post","type":"GM_xmlhttpRequest","contentType":"json","data":{"title":"${title}"},"handler":"return (res)=>[res.answer]"}]'></textarea>
+      </div>
+
+    </div>
+    <div class="footer">
+      <button class="primary" id="btnSave">保存配置</button>
+      <span id="saveHint" class="hint"></span>
+    </div>
+  </div>
+</div>
+
+<!-- 单个用户的 AI 接口 -->
+<div class="modal" id="aiModal">
+  <div class="box">
+    <header>
+      <div class="brand">
+        <div class="mark">AI</div>
+        <div><h1 id="aiWho">AI 接口</h1><small>每个账号可以走不同的服务商和 Key，额度互不占用</small></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="ghost" id="btnCloseAi">关闭</button>
+    </header>
+    <div class="body">
+      <div class="field switch">
+        <input type="checkbox" id="uaiCustom" />
+        <label for="uaiCustom">这个用户单独配置（不勾选就跟随全局设置）</label>
+      </div>
+
+      <div id="uaiBody">
+        <div class="field switch">
+          <input type="checkbox" id="uaiEnabled" />
+          <label for="uaiEnabled">为这个用户启用 AI 答题</label>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>服务商预设</label>
+            <select id="uaiProvider"></select>
+          </div>
+          <div class="field">
+            <label>模型名称</label>
+            <input id="uaiModel" placeholder="deepseek-chat" />
+          </div>
+        </div>
+        <div class="field">
+          <label>接口地址</label>
+          <input id="uaiBaseUrl" placeholder="https://api.deepseek.com/v1" />
+          <div class="hint" style="margin-top:5px">填到 /v1 即可；留空表示沿用全局的地址</div>
+        </div>
+        <div class="field">
+          <label>API Key</label>
+          <input id="uaiKey" type="password" placeholder="留空则继续用已保存的 Key" />
+          <div class="hint" style="margin-top:5px" id="uaiKeyHint">只写在本机 data 目录，不回传到控制台页面</div>
+          <label class="check" style="margin-top:7px"><input type="checkbox" id="uaiClearKey" /> 清空这个用户已保存的独立 Key</label>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>温度</label>
+            <input id="uaiTemp" type="number" step="0.1" min="0" max="2" />
+          </div>
+          <div class="field">
+            <label>最大回复长度</label>
+            <input id="uaiMaxTokens" type="number" min="128" />
+          </div>
+        </div>
+        <div class="field switch">
+          <input type="checkbox" id="uaiImages" />
+          <label for="uaiImages">允许发送图片（图片题、AI 识别加密字要用）</label>
+        </div>
+        <div class="row">
+          <button id="btnUaiTest">测试这个接口</button>
+          <span id="uaiTestResult" class="hint"></span>
+        </div>
+      </div>
+
+      <p class="hint" id="uaiGlobalHint" style="margin-top:14px"></p>
+    </div>
+    <div class="footer">
+      <button class="primary" id="btnUaiSave">保存</button>
+      <span id="uaiSaveHint" class="hint"></span>
+    </div>
+  </div>
+</div>
+
+<!-- 资源面板 -->
+<div class="modal" id="resModal">
+  <div class="box">
+    <header>
+      <div class="brand">
+        <div class="mark">R</div>
+        <div><h1>资源占用</h1><small>每 2 秒刷新，数据取自进程实际占用</small></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="ghost" id="btnCloseRes">关闭</button>
+    </header>
+    <div class="body">
+      <div class="res-grid">
+        <div class="res-cell">
+          <span>Node 内存</span><b id="resNode">—</b><i id="resNodeSub">读取中…</i>
+        </div>
+        <div class="res-cell">
+          <span>浏览器内存</span><b id="resChrome">—</b><i id="resChromeSub">读取中…</i>
+        </div>
+        <div class="res-cell">
+          <span>磁盘占用</span><b id="resDisk">—</b><i id="resDiskSub">data 目录（含登录态）</i>
+        </div>
+        <div class="res-cell">
+          <span>已拦截请求</span><b id="resBlocked">—</b><i id="resBlockedSub">开启省资源后累计</i>
+        </div>
+      </div>
+
+      <div class="res-chart">
+        <canvas id="resChart" height="70"></canvas>
+        <span class="hint">最近几分钟走势：<em class="c-node">Node</em> / <em class="c-chrome">浏览器</em></span>
+      </div>
+
+      <div class="res-users" id="resUsers"></div>
+
+      <div class="res-actions">
+        <button class="primary" id="btnCleanIdle">清理空闲浏览器</button>
+        <button id="btnCleanAll">清理全部（标签页 + 缓存 + GC）</button>
+        <label class="check"><input type="checkbox" id="cleanDisk" /> 同时清磁盘缓存</label>
+      </div>
+      <p class="hint" id="resHint" style="margin-top:8px">
+        空闲 = 没在跑任务的用户。关掉浏览器能立刻释放几百 MB，登录态仍在磁盘上，下次点「运行」会自动重开。
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- 人脸核验 / 摄像头接管 -->
+<div class="modal" id="camModal">
+  <div class="box cam-box">
+    <header>
+      <div class="brand">
+        <div class="mark">C</div>
+        <div><h1>人脸核验</h1><small>页面要求打开摄像头时，用你这里的画面顶替</small></div>
+      </div>
+      <div class="spacer"></div>
+      <button class="ghost" id="btnCloseCam">关闭</button>
+    </header>
+    <div class="body">
+      <div class="cam-wrap">
+        <div class="cam-list" id="camList"></div>
+        <div class="cam-main">
+          <div class="cam-stage" id="camStage">
+            <img id="camShot" alt="人脸画面预览" />
+            <video id="camVideo" playsinline muted hidden></video>
+            <div class="cam-empty" id="camEmpty">还没有页面请求摄像头</div>
+            <span class="cam-tag" id="camTag" hidden></span>
+          </div>
+          <div class="cam-tools">
+            <div class="cam-src">
+              <button class="primary" id="btnCamLive">打开我的摄像头</button>
+              <button id="btnCamSnap" disabled>拍一张</button>
+              <label class="ghost filebtn" id="camFileLabel">
+                上传照片<input type="file" id="camFile" accept="image/*" hidden>
+              </label>
+              <label class="ghost filebtn" id="camVideoLabel">
+                上传视频<input type="file" id="camVideoFile" accept="video/*" hidden>
+              </label>
+            </div>
+            <div class="cam-acts">
+              <button class="ghost" id="btnCamStop" disabled>结束</button>
+              <button class="danger" id="btnCamRefuse" disabled>拒绝</button>
+            </div>
+          </div>
+          <p class="hint" id="camHint">
+            进课程/考试时页面会要摄像头，这里给画面即可。<strong>开摄像头</strong>是实时的，能过眨眼、转头这类活体检测；
+            手边没摄像头就<strong>上传一张正脸照</strong>或<strong>一段视频</strong>。视频会循环播放，页面中途抓拍拿到的也是视频里的画面。
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PRESETS = {
+  deepseek:{baseUrl:'https://api.deepseek.com/v1',model:'deepseek-chat'},
+  openai:{baseUrl:'https://api.openai.com/v1',model:'gpt-4o-mini'},
+  qwen:{baseUrl:'https://dashscope.aliyuncs.com/compatible-mode/v1',model:'qwen-plus'},
+  kimi:{baseUrl:'https://api.moonshot.cn/v1',model:'moonshot-v1-8k'},
+  zhipu:{baseUrl:'https://open.bigmodel.cn/api/paas/v4',model:'glm-4-flash'},
+  siliconflow:{baseUrl:'https://api.siliconflow.cn/v1',model:'Qwen/Qwen2.5-7B-Instruct'},
+  openrouter:{baseUrl:'https://openrouter.ai/api/v1',model:'openai/gpt-4o-mini'},
+  ollama:{baseUrl:'http://127.0.0.1:11434/v1',model:'qwen2.5:7b'},
+  custom:{baseUrl:'',model:''}
+};
+
+const $ = (s) => document.querySelector(s);
+const el = (id) => document.getElementById(id);
+
+let state = null;
+let cfgCache = null; // /api/config 的缓存，只在打开设置面板时取
+let lightboxOpen = false;
+let wheelBusy = false;
+let lastUrl = '';
+let selectedTaskId = null; // 右侧画面正在看哪个用户
+let lastSession = null; // 服务端记的上次现场（谁、哪一页、在不在跑）
+
+/* ---------------- 记住界面状态 ----------------
+ * 服务端记「上次看的用户 + 停留的页面」（换电脑打开也能接上），
+ * localStorage 记界面开关（实时刷新等），刷新页面不用重新勾。
+ */
+const UI_KEY = 'ocs.ui.v1';
+function loadUiPrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(UI_KEY) || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+}
+let uiSaved = '';
+function saveUiPrefs() {
+  const s = JSON.stringify({ lastUserId: selectedTaskId || '', live: el('live').checked });
+  if (s === uiSaved) return;
+  uiSaved = s;
+  try {
+    localStorage.setItem(UI_KEY, s);
+  } catch (e) {}
+}
+
+let focusReported = null;
+let focusTimer = null;
+/** 切到哪个用户就告诉服务端一声，下次启动/换设备打开时能选中同一个人 */
+function rememberFocus(id) {
+  if (id) selectedTaskId = id;
+  saveUiPrefs();
+  if (!selectedTaskId || selectedTaskId === focusReported) return;
+  clearTimeout(focusTimer);
+  focusTimer = setTimeout(() => {
+    focusReported = selectedTaskId;
+    api('/api/session', {
+      method: 'PUT',
+      body: JSON.stringify({ lastUserId: selectedTaskId })
+    }).catch(() => {});
+  }, 800);
+}
+
+function sendInput(body) {
+  return api('/api/input', {
+    method: 'POST',
+    body: JSON.stringify(Object.assign({ user: selectedTaskId }, body))
+  });
+}
+
+function api(path, opts) {
+  return fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts))
+    .then(async (res) => {
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || res.statusText);
+      }
+      return res.json();
+    });
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+}
+
+function fmtMB(v) {
+  const n = Math.max(0, Math.round(v || 0));
+  return n >= 1024 ? (n / 1024).toFixed(1) + ' GB' : n + ' MB';
+}
+
+function fmtTime(ts) {
+  return new Date(ts).toTimeString().slice(0, 8);
+}
+
+function statusText(s) {
+  return {
+    idle:'待运行', queued:'排队中', running:'运行中',
+    done:'已完成', error:'出错', stopped:'已停止', closed:'已关闭'
+  }[s] || s;
+}
+
+/* ---------------- 工具 ---------------- */
+function fmtDur(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`;
+}
+
+/* ---------------- 用户 ---------------- */
+function actionsHtml(t) {
+  const running = (t.status || '') === 'running';
+  const ai = t.ai || {};
+  const aiTip = ai.custom
+    ? '独立 AI 接口：' + (ai.model || '未填模型')
+    : '跟随全局 AI：' + (ai.model || '未配置');
+  // 窗口开关：任务在跑时不显示（「停止」会一起关窗），跑完/停着时给一个明确的开关，
+  // 关掉只释放内存，登录态和上次的页面都留着，下次点「开窗」直接回到那一页
+  const winBtn = running
+    ? ''
+    : t.browserRunning
+      ? `<button class="win on" data-win="${t.id}" data-act="close" title="关闭这个用户的浏览器窗口（登录态保留，随时可再打开）">关窗</button>`
+      : `<button class="win" data-win="${t.id}" data-act="open" title="重新打开浏览器窗口，并回到上次停留的页面">开窗</button>`;
+  return [
+    running
+      ? `<button data-stopone="${t.id}">停止</button>`
+      : `<button class="run" data-run="${t.id}">运行</button>`,
+    winBtn,
+    `<button class="ai${ai.custom ? ' custom' : ''}" data-ai="${t.id}" title="${escapeHtml(aiTip)}">AI</button>`,
+    `<button data-pin="${t.id}" title="固定当前界面持续执行">${t.pin ? '解锁' : '锁定'}</button>`,
+    running && t.pin ? `<button data-relock="${t.id}" title="把锁定点更新为当前页面">重锁</button>` : '',
+    `<button class="danger icon" data-del="${t.id}" title="删除">✕</button>`
+  ].join('');
+}
+
+function urlLine(t) {
+  if (t.pageUrl) return t.pageUrl;
+  if (t.lastUrl) return '上次停在：' + t.lastUrl;
+  if (t.url) return '待打开：' + t.url;
+  return '还没填地址';
+}
+
+function taskHtml(t) {
+  const st = t.status || 'idle';
+  return `
+    <div class="task ${st} ${selectedTaskId === t.id ? 'selected' : ''}" data-id="${t.id}">
+      <div class="line1">
+        <div class="name"><span>${escapeHtml(t.name)}</span>${t.pin ? '<span class="lock-tag">已锁定</span>' : ''}${t.saved ? '<span class="saved-tag" title="已保存登录态，重启后不用重新登录">已存登录</span>' : ''}</div>
+        <span class="badge ${st}">${statusText(st)}</span>
+      </div>
+      <div class="addr-row">
+        <input class="task-addr" data-addr="${t.id}" value="${escapeHtml(t.pageUrl || t.lastUrl || t.url || '')}" placeholder="粘贴课程 / 作业地址，回车前往" spellcheck="false" />
+        <button class="go" data-go="${t.id}">前往</button>
+      </div>
+      <div class="line2">
+        <div class="acts">${actionsHtml(t)}</div>
+      </div>
+      ${t.error ? `<div class="task-err">${escapeHtml(t.error)}</div>` : ''}
+    </div>`;
+}
+
+function updateTaskNode(node, t) {
+  const st = t.status || 'idle';
+  node.className = 'task ' + st + (selectedTaskId === t.id ? ' selected' : '');
+  const line1 = node.querySelector('.line1');
+  if (line1) {
+    line1.innerHTML =
+      `<div class="name"><span>${escapeHtml(t.name)}</span>${t.pin ? '<span class="lock-tag">已锁定</span>' : ''}${t.saved ? '<span class="saved-tag" title="已保存登录态，重启后不用重新登录">已存登录</span>' : ''}</div>` +
+      `<span class="badge ${st}">${statusText(st)}</span>`;
+  }
+  const addr = node.querySelector('.task-addr');
+  if (addr && document.activeElement !== addr) {
+    const v = t.pageUrl || t.lastUrl || t.url || '';
+    if (addr.value !== v) addr.value = v;
+  }
+  const acts = node.querySelector('.acts');
+  if (acts) acts.innerHTML = actionsHtml(t);
+  let err = node.querySelector('.task-err');
+  if (t.error) {
+    if (!err) {
+      err = document.createElement('div');
+      err.className = 'task-err';
+      node.appendChild(err);
+    }
+    if (err.textContent !== t.error) err.textContent = t.error;
+  } else if (err) {
+    err.remove();
+  }
+}
+
+function renderTasks() {
+  const list = el('taskList');
+  const items = (state && state.users) || [];
+  el('taskCount').textContent = items.length ? items.length + ' 个' : '';
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">还没有用户<br />上面起个名字就能新建，登录态会一直保留</div>';
+    return;
+  }
+  const want = items.map((t) => t.id).join('|');
+  const have = [...list.children].map((n) => n.dataset.id || '').join('|');
+  if (want !== have) {
+    list.innerHTML = items.map(taskHtml).join('');
+    return;
+  }
+  items.forEach((t, i) => updateTaskNode(list.children[i], t));
+}
+
+/* ---------------- 状态刷新 ---------------- */
+async function refresh() {
+  try {
+    const q = selectedTaskId ? '?task=' + encodeURIComponent(selectedTaskId) : '';
+    state = await api('/api/state' + q);
+  } catch (e) {
+    return;
+  }
+
+  if (!Array.isArray(state.users)) state.users = [];
+
+  // 选中项被删掉或还没选时，自动落到第一个有页面的用户上
+  if (!state.users.some((t) => t.id === selectedTaskId)) {
+    const withPage = state.users.find((t) => t.pageUrl);
+    selectedTaskId = withPage ? withPage.id : state.users[0] ? state.users[0].id : null;
+  }
+  rememberFocus();
+  const focus = state.users.find((t) => t.id === selectedTaskId) || null;
+  el('focusName').textContent = focus ? focus.name : '未选择用户';
+
+  // 标签页计数：点开 target=_blank 的链接会多出一个标签，切过去/切回来靠这个按钮
+  const tabs = (focus && focus.tabs) || { total: 0, index: 0 };
+  const tabBtn = el('btnTab');
+  const tabTxt = tabs.total > 1 ? `${tabs.index + 1}/${tabs.total}` : '1/1';
+  if (tabBtn.textContent !== tabTxt) tabBtn.textContent = tabTxt;
+  tabBtn.classList.toggle('multi', tabs.total > 1);
+  tabBtn.disabled = tabs.total < 2;
+
+  const running = state.browser.running;
+  const runningTasks = state.users.filter((t) => (t.status || '') === 'running');
+  el('browserDot').className = 'dot ' + (running ? (runningTasks.length ? 'busy' : 'on') : '');
+  el('browserText').textContent = !running
+    ? '浏览器未启动'
+    : runningTasks.length
+      ? `运行中 ${runningTasks.length} 个用户`
+      : '浏览器就绪';
+
+  // 窗口关着时用「上次停留的地址」填地址栏，点刷新/前往就能接着回到那一页
+  const url = (focus && (focus.pageUrl || focus.lastUrl)) || '';
+  if (url !== lastUrl) {
+    lastUrl = url;
+    el('lbWhere').textContent = url || '—';
+  }
+  // 用户正在编辑地址栏时不要覆盖
+  if (document.activeElement !== el('addr')) {
+    if (el('addr').value !== url) el('addr').value = url;
+    el('addr').classList.remove('edited');
+  }
+
+  // 顶栏资源显示：Node + 所有浏览器加起来，超过 1.5GB 标黄提醒
+  const mem = state.mem || {};
+  const totalMB = (mem.rssMB || 0) + (mem.chromeMB || 0);
+  el('resText').textContent = fmtMB(totalMB);
+  el('resPill').classList.toggle('hot', totalMB > 1536);
+  el('resDot').className = 'dot ' + (totalMB > 1536 ? 'busy' : totalMB > 400 ? 'on' : '');
+  el('resPill').title = `Node ${mem.rssMB || 0}MB · 浏览器 ${mem.chromeMB || 0}MB · 磁盘 ${
+    mem.diskMB || 0
+  }MB${mem.blocked ? ' · 已拦截 ' + mem.blocked + ' 个请求' : ''}`;
+
+  renderTasks();
+}
+
+/* ---------------- 日志 ---------------- */
+function pushLog(entry) {
+  const box = el('logs');
+  const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const div = document.createElement('div');
+  div.className = entry.level;
+  const tag = entry.taskName ? '<span class="log-tag">' + escapeHtml(entry.taskName) + '</span>' : '';
+  div.innerHTML = '<time>' + fmtTime(entry.time) + '</time>' + tag + escapeHtml(entry.message);
+  box.appendChild(div);
+  while (box.childNodes.length > 400) box.removeChild(box.firstChild);
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+
+async function loadLogs() {
+  try {
+    const { logs } = await api('/api/logs');
+    el('logs').innerHTML = '';
+    logs.forEach(pushLog);
+  } catch (e) {}
+}
+
+/* ---------------- 画面 ---------------- */
+function ensureImg() {
+  const wrap = el('screenWrap');
+  let img = wrap.querySelector('img');
+  if (img) return img;
+  wrap.querySelectorAll('.placeholder').forEach((n) => n.remove());
+  img = new Image();
+  img.style.width = '100%';
+  img.style.height = '100%';
+  img.style.objectFit = 'contain';
+  img.style.cursor = 'crosshair';
+  img.onerror = () => {
+    // 截图接口 404（页面还没起来 / 已结束）时退回占位，别留一个破图图标
+    img.remove();
+    if (!wrap.querySelector('.placeholder')) {
+      const p = document.createElement('div');
+      p.className = 'placeholder';
+      p.innerHTML = '打开页面后这里显示实时画面<br />可直接点击画面完成扫码登录';
+      wrap.appendChild(p);
+    }
+  };
+  wrap.appendChild(img);
+  return img;
+}
+
+function clearScreen(focus) {
+  const wrap = el('screenWrap');
+  wrap.querySelectorAll('img').forEach((n) => n.remove());
+  let p = wrap.querySelector('.placeholder');
+  if (!p) {
+    p = document.createElement('div');
+    p.className = 'placeholder';
+    wrap.appendChild(p);
+  }
+  // 窗口是「关掉」的，和「还没打开过」不是一回事，提示分开写
+  const closed = focus && focus.status === 'closed';
+  const tip = closed
+    ? '这个用户的窗口已关闭<br />点卡片上的「开窗」，会回到上次停留的页面'
+    : '这个用户还没有打开页面<br />在上面的地址栏填 https://... 回车即可';
+  if (p.innerHTML !== tip) p.innerHTML = tip;
+}
+
+function refreshScreen(force) {
+  if (!state) return;
+  // 只看选中的用户，别拿别的用户的地址来放行
+  const focus = state.users.find((t) => t.id === selectedTaskId);
+  // about:blank 截图出来就是一片白，看着像坏了；空页面直接给提示。
+  // 这一步要在「浏览器有没有起来」之前判断：窗口关着时也要显示正确的提示
+  const blank = !focus || !focus.pageUrl || focus.pageUrl === 'about:blank';
+  if (blank) {
+    // 选中用户没页面时清掉旧图，否则看着是 A 的画面、点下去却发给 B
+    if (!lightboxOpen) clearScreen(focus);
+    return;
+  }
+  if (!state.browser.running) return;
+  if (!force && !lightboxOpen && !el('live').checked) return;
+  const q = lightboxOpen ? 82 : 58;
+  const src =
+    '/api/screen?task=' + encodeURIComponent(selectedTaskId || '') +
+    '&q=' + q + '&hd=' + (lightboxOpen ? 1 : 0) + '&t=' + Date.now();
+  if (lightboxOpen) {
+    el('lbImg').src = src;
+  } else {
+    ensureImg().src = src;
+  }
+}
+
+// 画面坐标 → 页面坐标（contain 缩放，含黑边偏移）
+function toPage(clientX, clientY, img) {
+  const cfg = state.browser;
+  const rect = img.getBoundingClientRect();
+  const scale = Math.min(rect.width / cfg.width, rect.height / cfg.height);
+  const renderW = cfg.width * scale;
+  const renderH = cfg.height * scale;
+  const offX = (rect.width - renderW) / 2;
+  const offY = (rect.height - renderH) / 2;
+  const x = Math.round((clientX - rect.left - offX) / scale);
+  const y = Math.round((clientY - rect.top - offY) / scale);
+  return { x, y, inside: x >= 0 && y >= 0 && x <= cfg.width && y <= cfg.height };
+}
+
+// 上一次在画面上点击的页面坐标，「双击」按钮沿用它
+let lastPoint = null;
+
+function clickAt(clientX, clientY, img) {
+  if (!state || !state.browser.running) return;
+  // 只对选中的用户发点击；否则服务端会回退到别的用户，点到不该点的地方
+  const focus = state.users.find((t) => t.id === selectedTaskId);
+  if (!focus || !focus.pageUrl) { toast('这个用户还没有打开页面'); return; }
+  const p = toPage(clientX, clientY, img);
+  if (!p.inside) return;
+  lastPoint = { x: p.x, y: p.y };
+  sendInput({ type: 'click', x: p.x, y: p.y }).catch(() => {});
+}
+
+function dblclickAt(clientX, clientY, img) {
+  if (!state || !state.browser.running) return;
+  const focus = state.users.find((t) => t.id === selectedTaskId);
+  if (!focus || !focus.pageUrl) { toast('这个用户还没有打开页面'); return; }
+  const p = toPage(clientX, clientY, img);
+  if (!p.inside) return;
+  lastPoint = { x: p.x, y: p.y };
+  sendInput({ type: 'dblclick', x: p.x, y: p.y }).catch(() => {});
+}
+
+// 工具栏「双击」：优先双击上一次点击的位置，没有就双击页面中心
+function doubleClickLast() {
+  if (!state || !state.browser.running) { toast('浏览器还没启动'); return; }
+  const focus = state.users.find((t) => t.id === selectedTaskId);
+  if (!focus || !focus.pageUrl) { toast('这个用户还没有打开页面'); return; }
+  const cfg = state.browser;
+  const at = lastPoint || { x: Math.round(cfg.width / 2), y: Math.round(cfg.height / 2) };
+  sendInput({ type: 'dblclick', x: at.x, y: at.y })
+    .then(() => toast('已双击 (' + at.x + ', ' + at.y + ')'))
+    .catch((e) => toast(e.message || '双击失败'));
+}
+
+function wheelAt(e) {
+  if (!state || !state.browser.running) return;
+  if (wheelBusy) return;
+  wheelBusy = true;
+  const p = toPage(e.clientX, e.clientY, el('lbImg'));
+  const body = { type: 'wheel', deltaY: Math.round(e.deltaY) };
+  if (p.inside) { body.x = p.x; body.y = p.y; }
+  sendInput(body).catch(() => {});
+  setTimeout(() => (wheelBusy = false), 110);
+}
+
+let toastTimer = null;
+function toast(msg) {
+  let n = document.getElementById('toast');
+  if (!n) {
+    n = document.createElement('div');
+    n.id = 'toast';
+    document.body.appendChild(n);
+  }
+  n.textContent = msg;
+  n.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => n.classList.remove('show'), 2200);
+}
+
+/* ---------------- 放大层 ---------------- */
+function openLightbox() {
+  if (!state) return;
+  const f = state.users.find((t) => t.id === selectedTaskId);
+  if (!state.browser.running || !f || !f.pageUrl || f.pageUrl === 'about:blank') {
+    toast('这个用户还没有打开页面，先在地址栏填地址');
+    return;
+  }
+  lightboxOpen = true;
+  el('lightbox').classList.add('show');
+  el('lbWhere').textContent = f.pageUrl || '—';
+  refreshScreen(true);
+}
+
+function closeLightbox() {
+  lightboxOpen = false;
+  el('lightbox').classList.remove('show');
+  refreshScreen(true);
+}
+
+el('screenWrap').addEventListener('click', (e) => {
+  if (e.target.closest('.screen-tools')) return;
+  const img = e.currentTarget.querySelector('img');
+  if (!img) return;
+  clickAt(e.clientX, e.clientY, img);
+});
+
+// 画面上双击：前两下 click 已经照常发出，这里补一个 dblclick，
+// 页面收到的序列与真实浏览器一致（click → click → dblclick）
+el('screenWrap').addEventListener('dblclick', (e) => {
+  if (e.target.closest('.screen-tools')) return;
+  const img = e.currentTarget.querySelector('img');
+  if (!img) return;
+  dblclickAt(e.clientX, e.clientY, img);
+});
+
+el('lbImg').addEventListener('dblclick', (e) => {
+  if (touchMoved) { touchMoved = false; return; }
+  dblclickAt(e.clientX, e.clientY, el('lbImg'));
+});
+
+el('lbImg').addEventListener('click', (e) => {
+  if (touchMoved) { touchMoved = false; return; }
+  clickAt(e.clientX, e.clientY, el('lbImg'));
+});
+el('lbImg').onerror = () => {
+  el('lbWhere').textContent = '截图失败：页面可能已关闭';
+};
+el('lightbox').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  wheelAt(e);
+}, { passive: false });
+
+/* 触摸：单指上下滑 = 滚动页面，轻点 = 点击 */
+let touchStart = null;
+let touchMoved = false;
+
+el('lightbox').addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1) { touchStart = null; return; }
+  touchStart = { y: e.touches[0].clientY, x: e.touches[0].clientX };
+  touchMoved = false;
+}, { passive: true });
+
+el('lightbox').addEventListener('touchmove', (e) => {
+  if (!touchStart || e.touches.length !== 1) return;
+  const t = e.touches[0];
+  if (Math.abs(t.clientY - touchStart.y) > 12 || Math.abs(t.clientX - touchStart.x) > 12) {
+    touchMoved = true;
+  }
+  if (!touchMoved) return;
+  e.preventDefault();
+  if (wheelBusy) return;
+  wheelBusy = true;
+  const dy = touchStart.y - t.clientY;
+  touchStart.y = t.clientY;
+  const p = toPage(t.clientX, t.clientY, el('lbImg'));
+  const body = { type: 'wheel', deltaY: Math.round(dy * 1.6) };
+  if (p.inside) { body.x = p.x; body.y = p.y; }
+  sendInput(body).catch(() => {});
+  setTimeout(() => (wheelBusy = false), 90);
+}, { passive: false });
+
+el('lightbox').addEventListener('touchend', () => {
+  touchStart = null;
+  // 让随后的 click 判断到 touchMoved
+  setTimeout(() => (touchMoved = false), 60);
+}, { passive: true });
+
+el('btnExpand').onclick = openLightbox;
+el('lbClose').onclick = closeLightbox;
+el('lbDbl').onclick = doubleClickLast;
+el('lbReload').onclick = () => {
+  sendInput({ type: 'reload' }).catch(() => {});
+};
+
+/* ---------------- 地址栏（右侧画面当前用户）---------------- */
+el('addr').addEventListener('input', () => el('addr').classList.add('edited'));
+el('addr').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const url = el('addr').value.trim();
+    if (!url || !selectedTaskId) return;
+    el('addr').classList.remove('edited');
+    goTaskUrl(selectedTaskId, url);
+  }
+  if (e.key === 'Escape') el('addr').blur();
+});
+el('btnBack').onclick = () => sendInput({ type: 'back' }).then(() => setTimeout(refresh, 600)).catch(() => {});
+el('btnReload').onclick = () => sendInput({ type: 'reload' }).catch(() => {});
+// 点了在新标签打开的链接后，画面会自动跟过去；这个按钮用来切回原来的页面
+el('btnTab').onclick = async () => {
+  if (!selectedTaskId) return;
+  try {
+    const r = await api('/api/users/' + encodeURIComponent(selectedTaskId) + '/tabs', {
+      method: 'POST',
+      body: JSON.stringify({ dir: 1 })
+    });
+    if (r && r.url != null) {
+      el('addr').value = r.url;
+      lastUrl = r.url;
+    }
+    await refresh();
+    refreshScreen(true);
+  } catch (e) {
+    /* 只有一个标签时接口返回 409，忽略即可 */
+  }
+};
+el('btnCopy').onclick = async () => {
+  const url = el('addr').value;
+  if (!url) return;
+  try {
+    await navigator.clipboard.writeText(url);
+    el('btnCopy').textContent = '✓';
+    setTimeout(() => (el('btnCopy').textContent = '⧉'), 1200);
+  } catch (e) {
+    el('addr').select();
+  }
+};
+
+/* ---------------- 用户操作 ---------------- */
+el('btnAdd').onclick = async () => {
+  const name = el('newName').value.trim();
+  if (!name) { el('newName').focus(); return; }
+  try {
+    const r = await api('/api/users', { method: 'POST', body: JSON.stringify({ name }) });
+    el('newName').value = '';
+    if (r && r.user) selectedTaskId = r.user.id;
+    refresh();
+    setTimeout(refresh, 1500); // 浏览器起来后把地址栏补上
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
+el('newName').addEventListener('keydown', (e) => { if (e.key === 'Enter') el('btnAdd').click(); });
+el('typeText').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { el('btnType').click(); }
+});
+
+// 点卡片任意空白处 = 把右侧画面切到这个用户
+el('taskList').addEventListener('click', (e) => {
+  const card = e.target.closest('.task');
+  if (!card) return;
+  if (e.target.closest('button') || e.target.closest('input')) return;
+  selectedTaskId = card.dataset.id;
+  refresh();
+  refreshScreen(true);
+});
+
+// 用户卡片里的地址栏：回车 = 前往
+el('taskList').addEventListener('keydown', (e) => {
+  const input = e.target.closest('.task-addr');
+  if (!input || e.key !== 'Enter') return;
+  goTaskUrl(input.dataset.addr, input.value);
+});
+// 点「前往」时别让输入框先失焦（失焦会把刚填的地址撤回成旧值）
+el('taskList').addEventListener('mousedown', (e) => {
+  if (e.target.closest('[data-go]')) e.preventDefault();
+});
+el('taskList').addEventListener('focusout', (e) => {
+  // 失焦时把没提交的修改撤回到真实地址，避免看起来像改了却没生效
+  const input = e.target.closest('.task-addr');
+  if (!input || !state) return;
+  // 点的是同一行的「前往」：焦点先丢、点击后到，这时撤回会把刚填的地址吃掉，
+  // 表现就是「填了地址点前往，还是跳回旧页面」
+  const next = e.relatedTarget;
+  if (next && next.dataset && next.dataset.go === input.dataset.addr) return;
+  const t = state.users.find((x) => x.id === input.dataset.addr);
+  const real = t ? t.pageUrl || t.lastUrl || t.url || '' : '';
+  if (t && input.value !== real) input.value = real;
+});
+
+async function goTaskUrl(taskId, rawUrl) {
+  const url = String(rawUrl || '').trim();
+  if (!url) return;
+  if (!/^https?:\/\//i.test(url) && url !== 'about:blank') {
+    alert('地址要以 http:// 或 https:// 开头');
+    return;
+  }
+  try {
+    await api('/api/users/' + taskId + '/goto', { method: 'POST', body: JSON.stringify({ url }) });
+    selectedTaskId = taskId;
+    setTimeout(refresh, 800);
+    setTimeout(refreshScreen, 1200, true);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+el('taskList').onclick = async (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const { run, del, pin, relock, stopone, go, addr, ai, win } = btn.dataset;
+  try {
+    if (ai) {
+      openUserAi(ai).catch(() => {});
+      return;
+    }
+    if (win) {
+      const act = btn.dataset.act === 'open' ? 'open' : 'close';
+      await api('/api/users/' + win + '/window', { method: 'POST', body: JSON.stringify({ action: act }) });
+      toast(act === 'open' ? '正在打开窗口…' : '窗口已关闭，登录态还在');
+      selectedTaskId = win;
+    }
+    if (go) {
+      const input = btn.parentElement.querySelector('.task-addr');
+      await goTaskUrl(go, input ? input.value : '');
+      return;
+    }
+    if (run) {
+      await api('/api/users/' + run + '/run', { method: 'POST' });
+      selectedTaskId = run;
+    }
+    if (stopone) await api('/api/users/' + stopone + '/stop', { method: 'POST' });
+    if (del) {
+      if (!confirm('删除这个用户？\n\n它的登录态、浏览历史都会一起删掉，下次要重新登录。')) return;
+      await api('/api/users/' + del, { method: 'DELETE' });
+      if (selectedTaskId === del) selectedTaskId = null;
+    }
+    if (pin) await api('/api/users/' + pin + '/pin', { method: 'POST', body: JSON.stringify({}) });
+    if (relock) await api('/api/users/' + relock + '/relock', { method: 'POST', body: JSON.stringify({}) });
+  } catch (err) {
+    alert(err.message);
+  }
+  refresh();
+  refreshScreen(true);
+};
+
+el('btnStop').onclick = async () => {
+  if (!confirm('停止所有用户？')) return;
+  await api('/api/stop', { method: 'POST' });
+  refresh();
+};
+
+el('btnType').onclick = () => {
+  const text = el('typeText').value;
+  if (!text) return;
+  sendInput({ type: 'type', text }).catch(() => {});
+  el('typeText').value = '';
+};
+el('btnEnter').onclick = () => sendInput({ type: 'key', key: 'Enter' }).catch(() => {});
+el('btnShot').onclick = () => refreshScreen(true);
+el('btnDbl').onclick = doubleClickLast;
+el('btnClearLogs').onclick = () => { el('logs').innerHTML = ''; };
+
+/* ---------------- 配置 ---------------- */
+async function loadConfig(force) {
+  if (!cfgCache || force) cfgCache = await api('/api/config');
+  return cfgCache;
+}
+
+function fillConfig() {
+  const c = cfgCache;
+  el('aiEnabled').checked = !!c.ai.enabled;
+  el('aiProvider').value = c.ai.provider || 'custom';
+  el('aiBaseUrl').value = c.ai.baseUrl || '';
+  el('aiModel').value = c.ai.model || '';
+  el('aiKey').value = c.ai.apiKey || '';
+  el('aiTemp').value = c.ai.temperature ?? 0.2;
+  el('aiMaxTokens').value = c.ai.maxTokens ?? 1024;
+  el('aiImages').checked = !!c.ai.supportImages;
+  el('cryptoTextMode').value = (c.ocs && c.ocs.cryptoText && c.ocs.cryptoText.mode) || 'font';
+  el('autoStart').checked = !!(c.ocs && c.ocs.autoStart);
+  el('autoRun').checked = !!(c.server && c.server.autoRun);
+  el('resumeSession').checked = !(c.server && c.server.resumeSession === false);
+  el('browserSize').value = (c.browser.width || 1280) + 'x' + (c.browser.height || 800);
+  el('browserDpr').value = String(c.browser.deviceScaleFactor || 1);
+  el('wrappers').value = JSON.stringify(c.answererWrappers || [], null, 2);
+
+  const sv = c.browser.resourceSaver || {};
+  el('saverEnabled').checked = !!sv.enabled;
+  el('saverTrackers').checked = sv.blockTrackers !== false;
+  el('saverThird').checked = !!sv.blockThirdParty;
+  el('saverImages').checked = !!sv.blockImages;
+  el('saverFonts').checked = !!sv.blockFonts;
+  el('saverMedia').checked = !!sv.blockMedia;
+  el('saverBlocklist').value = (sv.blocklist || []).join('\n');
+}
+
+el('aiProvider').onchange = () => {
+  const p = PRESETS[el('aiProvider').value];
+  if (p) {
+    el('aiBaseUrl').value = p.baseUrl;
+    el('aiModel').value = p.model;
+  }
+};
+
+el('btnConfig').onclick = async () => {
+  try {
+    await loadConfig(true);
+    fillConfig();
+    el('modal').classList.add('show');
+  } catch (e) {
+    alert('读取配置失败：' + e.message);
+  }
+};
+el('btnCloseModal').onclick = () => el('modal').classList.remove('show');
+
+el('btnTestAi').onclick = async () => {
+  const out = el('aiTestResult');
+  out.textContent = '正在请求…';
+  out.style.color = 'var(--muted)';
+  try {
+    const r = await api('/api/ai/test', {
+      method: 'POST',
+      body: JSON.stringify({
+        baseUrl: el('aiBaseUrl').value,
+        apiKey: el('aiKey').value,
+        model: el('aiModel').value,
+        temperature: Number(el('aiTemp').value),
+        maxTokens: Number(el('aiMaxTokens').value)
+      })
+    });
+    out.style.color = r.ok ? 'var(--ok)' : 'var(--err)';
+    out.textContent = r.ok ? '连接成功：' + r.answer + '（' + r.ms + 'ms）' : '失败：' + r.error;
+  } catch (e) {
+    out.style.color = 'var(--err)';
+    out.textContent = '失败：' + e.message;
+  }
+};
+
+el('btnSave').onclick = async () => {
+  let wrappers = [];
+  try { wrappers = JSON.parse(el('wrappers').value || '[]'); } catch (e) { wrappers = []; }
+  const patch = {
+    ai: {
+      enabled: el('aiEnabled').checked,
+      provider: el('aiProvider').value,
+      baseUrl: el('aiBaseUrl').value.trim(),
+      model: el('aiModel').value.trim(),
+      apiKey: el('aiKey').value.trim(),
+      temperature: Number(el('aiTemp').value),
+      maxTokens: Number(el('aiMaxTokens').value),
+      supportImages: el('aiImages').checked
+    },
+    browser: (() => {
+      const m = /^\s*(\d{3,4})\s*[x×*]\s*(\d{3,4})\s*$/i.exec(el('browserSize').value || '');
+      const cur = (cfgCache && cfgCache.browser) || {};
+      return {
+        width: m ? Number(m[1]) : (cur.width || 1280),
+        height: m ? Number(m[2]) : (cur.height || 800),
+        deviceScaleFactor: Number(el('browserDpr').value) || 1,
+        resourceSaver: {
+          enabled: el('saverEnabled').checked,
+          blockTrackers: el('saverTrackers').checked,
+          blockThirdParty: el('saverThird').checked,
+          blockImages: el('saverImages').checked,
+          blockFonts: el('saverFonts').checked,
+          blockMedia: el('saverMedia').checked,
+          blocklist: el('saverBlocklist').value
+            .split(/[\n,]/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        }
+      };
+    })(),
+    ocs: {
+      autoStart: el('autoStart').checked,
+      cryptoText: { mode: el('cryptoTextMode').value || 'font' }
+    },
+    server: { autoRun: el('autoRun').checked, resumeSession: el('resumeSession').checked },
+    answererWrappers: wrappers
+  };
+  try {
+    await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });
+    cfgCache = null;
+    el('saveHint').textContent = '已保存，运行中的页面立即生效';
+    setTimeout(() => (el('saveHint').textContent = ''), 3000);
+    refresh();
+  } catch (e) {
+    el('saveHint').textContent = '保存失败：' + e.message;
+  }
+};
+
+/* ---------------- 单个用户的 AI 接口 ---------------- */
+let aiModalUser = null;
+
+function uaiEffectiveText(r) {
+  const e = r.effective || {};
+  const key = r.ai && r.ai.hasKey ? 'Key 已配置' : '未配 Key（仅本地 / 免鉴权接口可用）';
+  const off = r.ai && r.ai.enabled ? '' : ' · <span class="cam-hint-warn">AI 答题未启用</span>';
+  return `这个用户当前实际在用：<b>${escapeHtml(e.model || '未填模型')}</b> · ${escapeHtml(e.baseUrl || '未填地址')} · ${key}${off}`;
+}
+
+function syncUaiState() {
+  const custom = el('uaiCustom').checked;
+  el('uaiBody').classList.toggle('off', !custom);
+  // 灰掉时连 Tab 焦点也不进，避免误改后以为生效了
+  el('uaiBody').inert = !custom;
+  if (!aiModalUser) return;
+  const t = (state && state.users || []).find((x) => x.id === aiModalUser);
+  const name = t ? t.name : '用户';
+  if (!custom) {
+    el('uaiGlobalHint').innerHTML = `<b>${escapeHtml(name)}</b> 跟随全局的 AI 设置，改这里不影响别人。勾选上面的选项才能给他单独的接口。`;
+  }
+}
+
+async function openUserAi(id) {
+  aiModalUser = id;
+  const t = (state && state.users || []).find((x) => x.id === id);
+  el('aiWho').textContent = (t ? t.name : '用户') + ' 的 AI 接口';
+  el('uaiTestResult').textContent = '';
+  el('uaiSaveHint').textContent = '';
+  try {
+    // 顺手把全局配置拿回来：勾上「单独配置」时用它的值当起点，不用从空表单开始
+    loadConfig().catch(() => {});
+    const r = await api('/api/users/' + encodeURIComponent(id) + '/ai');
+    const a = r.ai;
+    const custom = !!a.custom;
+    el('uaiCustom').checked = custom;
+    el('uaiEnabled').checked = !!a.enabled;
+    // 留空的项实际走全局的，这里直接显示全局值，避免表单空白看不出在用什么
+    el('uaiProvider').value = a.provider || r.global.provider || 'custom';
+    el('uaiBaseUrl').value = a.baseUrl || r.global.baseUrl || '';
+    el('uaiModel').value = a.model || r.global.model || '';
+    el('uaiKey').value = '';
+    el('uaiClearKey').checked = false;
+    el('uaiKey').placeholder = a.ownKey
+      ? '已保存（留空不改）'
+      : (r.global.hasKey ? '留空则用全局的 Key' : 'sk-...');
+    el('uaiKeyHint').textContent = a.ownKey
+      ? '已有独立 Key；留空＝不修改，要清空请勾选下面的复选框'
+      : (r.global.hasKey ? '没填就用全局设置里的 Key' : '只写在本机 data 目录，不回传到控制台页面');
+    el('uaiTemp').value = a.temperature ?? 0.2;
+    el('uaiMaxTokens').value = a.maxTokens ?? 1024;
+    el('uaiImages').checked = a.supportImages !== false;
+    el('uaiGlobalHint').innerHTML = a.custom
+      ? uaiEffectiveText(r)
+      : `<b>${escapeHtml(t ? t.name : '用户')}</b> 现在跟随全局：` +
+        `${escapeHtml(r.effective.model || '未填模型')} · ${escapeHtml(r.effective.baseUrl || '未填地址')}。` +
+        '勾选上面的「单独配置」可以给他换成别的服务商或 Key。';
+    syncUaiState();
+    el('aiModal').classList.add('show');
+  } catch (e) {
+    alert('读取这个用户的 AI 配置失败：' + e.message);
+  }
+}
+
+function closeUserAi() {
+  el('aiModal').classList.remove('show');
+  aiModalUser = null;
+}
+
+el('uaiCustom').onchange = () => {
+  syncUaiState();
+  if (!el('uaiCustom').checked) {
+    el('uaiGlobalHint').innerHTML = '已改为跟随全局；保存后这个用户的接口就回到全局那份。';
+    return;
+  }
+  // 第一次打开时，把全局的值填进来当起点，省得从空表单开始
+  if (cfgCache && cfgCache.ai) {
+    if (!el('uaiBaseUrl').value) el('uaiBaseUrl').value = cfgCache.ai.baseUrl || '';
+    if (!el('uaiModel').value) el('uaiModel').value = cfgCache.ai.model || '';
+    if (el('uaiTemp').value === '') el('uaiTemp').value = cfgCache.ai.temperature ?? 0.2;
+    if (el('uaiMaxTokens').value === '') el('uaiMaxTokens').value = cfgCache.ai.maxTokens ?? 1024;
+  }
+  el('uaiGlobalHint').innerHTML = '填好后保存，这个用户就会用你这里的接口，其他人不受影响。';
+};
+
+el('uaiProvider').onchange = () => {
+  const p = PRESETS[el('uaiProvider').value];
+  if (p) {
+    el('uaiBaseUrl').value = p.baseUrl;
+    el('uaiModel').value = p.model;
+  }
+};
+
+el('btnCloseAi').onclick = closeUserAi;
+
+el('btnUaiTest').onclick = async () => {
+  if (!aiModalUser) return;
+  const out = el('uaiTestResult');
+  out.textContent = '正在请求…';
+  out.style.color = 'var(--muted)';
+  try {
+    const r = await api('/api/ai/test', {
+      method: 'POST',
+      body: JSON.stringify({
+        userId: aiModalUser,
+        baseUrl: el('uaiBaseUrl').value.trim(),
+        model: el('uaiModel').value.trim(),
+        apiKey: el('uaiKey').value.trim(),
+        temperature: Number(el('uaiTemp').value),
+        maxTokens: Number(el('uaiMaxTokens').value)
+      })
+    });
+    out.style.color = r.ok ? 'var(--ok)' : 'var(--err)';
+    out.textContent = r.ok ? '连接成功：' + r.answer + '（' + r.ms + 'ms）' : '失败：' + r.error;
+  } catch (e) {
+    out.style.color = 'var(--err)';
+    out.textContent = '失败：' + e.message;
+  }
+};
+
+el('btnUaiSave').onclick = async () => {
+  if (!aiModalUser) return;
+  const g = (cfgCache && cfgCache.ai) || {};
+  let custom = el('uaiCustom').checked;
+  const baseUrl = el('uaiBaseUrl').value.trim();
+  const model = el('uaiModel').value.trim();
+  const key = el('uaiKey').value.trim();
+  const clearKey = el('uaiClearKey').checked;
+
+  // 没勾「单独配置」时表单是灰的，但很多人还是会往里填 —— 填了等于白填，
+  // 保存前问一句，避免「我明明配了却不生效」。
+  if (!custom) {
+    const touched =
+      baseUrl || model || key || clearKey || el('uaiEnabled').checked !== !!g.enabled;
+    if (touched) {
+      const wantCustom = confirm(
+        '现在是「跟随全局」，表单里填的内容不会被保存。\n\n' +
+          '点「确定」= 改成这个用户单独配置并保存\n点「取消」= 仍然跟随全局'
+      );
+      if (wantCustom) {
+        custom = true;
+        el('uaiCustom').checked = true;
+      }
+    }
+  } else {
+    // 地址/模型留空会静默回落全局，用户很容易以为「配了自己的」
+    if (!baseUrl || !model) {
+      if (!confirm('接口地址或模型留空的那一项会沿用全局的值。\n\n继续保存？')) return;
+    }
+    if (!key && !clearKey && !g.hasKey && !/已保存/.test(el('uaiKey').placeholder)) {
+      alert(
+        '这个用户还没有可用的 Key。\n\n' +
+          '填一个 Key；如果接口本身不需要鉴权（本地 Ollama 等），地址填内网/本机即可。'
+      );
+      return;
+    }
+  }
+
+  el('uaiSaveHint').textContent = '保存中…';
+  try {
+    const r = await api('/api/users/' + encodeURIComponent(aiModalUser) + '/ai', {
+      method: 'PUT',
+      body: JSON.stringify({
+        custom,
+        enabled: el('uaiEnabled').checked,
+        provider: el('uaiProvider').value,
+        baseUrl,
+        model,
+        apiKey: key,
+        clearKey,
+        temperature: Number(el('uaiTemp').value),
+        maxTokens: Number(el('uaiMaxTokens').value),
+        supportImages: el('uaiImages').checked
+      })
+    });
+
+    // 保存后留在弹窗里，把「实际在用哪套」写出来：比关掉弹窗只弹一句 toast 好确认
+    el('uaiKey').value = '';
+    el('uaiClearKey').checked = false;
+    el('uaiCustom').checked = !!r.ai.custom;
+    const eff = r.effective || {};
+    const keySrc = r.ai.ownKey ? '独立 Key' : r.ai.hasKey ? '全局 Key' : '无 Key';
+    const offTip = r.ai.enabled ? '' : ' · <span class="cam-hint-warn">AI 答题未启用</span>';
+    el('uaiGlobalHint').innerHTML = r.ai.custom
+      ? `已保存，正在生效：<b>${escapeHtml(eff.model || '未填模型')}</b> · ` +
+        `${escapeHtml(eff.baseUrl || '未填地址')} · ${keySrc}${offTip}`
+      : `已改回跟随全局：<b>${escapeHtml(eff.model || '未配置')}</b> · ${escapeHtml(eff.baseUrl || '未填地址')}${offTip}`;
+    el('uaiSaveHint').textContent = '已保存，1~3 秒内生效';
+    toast(r.ai.custom ? '已保存：这个用户用独立接口' : '已改回跟随全局');
+    refresh();
+    return r;
+  } catch (e) {
+    el('uaiSaveHint').textContent = '保存失败：' + e.message;
+  }
+};
+
+/* ---------------- 资源面板 ---------------- */
+let resTimer = null;
+let resBusy = false;
+
+function openRes() {
+  el('resModal').classList.add('show');
+  refreshRes();
+  if (!resTimer) resTimer = setInterval(refreshRes, 2000);
+}
+
+function closeRes() {
+  el('resModal').classList.remove('show');
+  if (resTimer) clearInterval(resTimer);
+  resTimer = null;
+}
+
+function drawResChart(history) {
+  const cv = el('resChart');
+  const w = cv.clientWidth || 600;
+  const h = 70;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr)) {
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+  }
+  const ctx = cv.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const list = history || [];
+  if (list.length < 2) return;
+  const max = Math.max(64, ...list.map((p) => Math.max(p.n || 0, p.c || 0)));
+  const pad = 6;
+  const plot = (key, color) => {
+    ctx.beginPath();
+    list.forEach((p, i) => {
+      const x = pad + (i / (list.length - 1)) * (w - pad * 2);
+      const y = h - pad - ((p[key] || 0) / max) * (h - pad * 2);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  };
+  // 网格线
+  ctx.strokeStyle = 'rgba(255,255,255,.045)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = pad + (i / 4) * (h - pad * 2);
+    ctx.beginPath();
+    ctx.moveTo(pad, y);
+    ctx.lineTo(w - pad, y);
+    ctx.stroke();
+  }
+  plot('c', '#e0b354');
+  plot('n', '#8ea8ff');
+}
+
+async function refreshRes() {
+  if (resBusy) return;
+  resBusy = true;
+  try {
+    const m = await api('/api/metrics');
+    el('resNode').textContent = fmtMB(m.node.rssMB);
+    el('resNodeSub').textContent = `堆 ${m.node.heapUsedMB}/${m.node.heapTotalMB}MB · CPU ${m.node.cpuPct}% · 事件循环延迟 ${m.node.loopLagMs}ms`;
+    el('resChrome').textContent = fmtMB(m.chrome.rssMB);
+    el('resChromeSub').textContent = `${m.chrome.procs} 个进程 · CPU ${m.chrome.cpuPct}%`;
+    el('resDisk').textContent = m.disk.dataMB ? fmtMB(m.disk.dataMB) : '统计中…';
+    el('resDiskSub').textContent = `系统空闲 ${fmtMB(m.system.freeMB)} / ${fmtMB(m.system.totalMB)}`;
+    el('resBlocked').textContent = m.saver.blocked ? m.saver.blocked + ' 个' : '0 个';
+    const types = Object.entries(m.saver.byType || {})
+      .map(([k, v]) => k + ' ' + v)
+      .join('、');
+    el('resBlockedSub').textContent = types || '开启省资源后累计';
+
+    const users = (state && state.users) || [];
+    const rows = users
+      .map((u) => {
+        const c = (m.chrome.users || {})[u.id] || {};
+        const d = (m.disk.users || {})[u.id];
+        const st = statusText(u.status || 'idle');
+        return `<tr><td title="${escapeHtml(u.name)}">${escapeHtml(u.name)}</td><td>${fmtMB(
+          c.rssMB || 0
+        )}</td><td>${(c.cpuPct || 0).toFixed(1)}%</td><td>${(u.tabs && u.tabs.total) || 0}</td><td>${
+          d == null ? '—' : fmtMB(d)
+        }</td><td>${st}</td></tr>`;
+      })
+      .join('');
+    el('resUsers').innerHTML = users.length
+      ? `<table class="res-table"><thead><tr><th>用户</th><th>内存</th><th>CPU</th><th>标签</th><th>磁盘</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<p class="hint">还没有用户</p>';
+
+    drawResChart(m.history);
+  } catch (e) {
+    el('resHint').textContent = '读取失败：' + e.message;
+  } finally {
+    resBusy = false;
+  }
+}
+
+async function runCleanup(scope) {
+  const btn = scope === 'idle' ? el('btnCleanIdle') : el('btnCleanAll');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '清理中…';
+  try {
+    const r = await api('/api/maintenance/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ scope, tabs: true, cache: true, gc: true, disk: el('cleanDisk').checked })
+    });
+    el('resHint').textContent =
+      (r.details && r.details.length ? r.details.join('；') + '。' : '没有可清理的内容。') +
+      `内存 ${r.beforeMB}MB → ${r.afterMB}MB，释放约 ${r.freedMB}MB`;
+    toast('已清理，释放约 ' + r.freedMB + 'MB');
+    await refresh();
+    await refreshRes();
+  } catch (e) {
+    el('resHint').textContent = '清理失败：' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+el('resPill').onclick = openRes;
+el('btnCloseRes').onclick = closeRes;
+el('btnCleanIdle').onclick = () => runCleanup('idle');
+el('btnCleanAll').onclick = () => runCleanup('all');
+
+/* 人脸核验 */
+el('camPill').onclick = openCam;
+el('btnCloseCam').onclick = closeCam;
+el('btnCamLive').onclick = () => startCamLocal().catch(() => {});
+el('btnCamSnap').onclick = () => snapCamOnce().catch(() => {});
+el('camFile').onchange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) uploadCamPhoto(f).catch(() => {});
+};
+el('camVideoFile').onchange = (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (f) startCamVideo(f).catch(() => {});
+};
+el('btnCamStop').onclick = async () => {
+  if (!camPick) return;
+  stopCamLocal(true);
+  await api('/api/camera/' + encodeURIComponent(camPick) + '/stop', { method: 'POST' }).catch(() => {});
+  await loadCamList();
+  showCamStage();
+};
+el('btnCamRefuse').onclick = async () => {
+  if (!camPick) return;
+  stopCamLocal(true);
+  await api('/api/camera/' + encodeURIComponent(camPick) + '/refuse', { method: 'POST' }).catch(() => {});
+  await loadCamList();
+  showCamStage();
+};
+
+/* 点遮罩关闭弹窗（点里面不关）：配置 / AI / 资源 / 人脸核验都适用。
+   用 mousedown 而不是 click，避免在弹窗里选完文字、拖到外面松手被误关 */
+document.querySelectorAll('.modal').forEach((m) => {
+  m.addEventListener('mousedown', (e) => {
+    if (e.target !== m) return;
+    if (m.id === 'camModal') closeCam();
+    else if (m.id === 'aiModal') closeUserAi();
+    else if (m.id === 'resModal') closeRes();
+    else m.classList.remove('show');
+  });
+});
+
+/* ---------------- 全局快捷键 ---------------- */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (lightboxOpen) closeLightbox();
+  else if (el('aiModal').classList.contains('show')) closeUserAi();
+  else if (el('camModal').classList.contains('show')) closeCam();
+  else if (el('resModal').classList.contains('show')) closeRes();
+  else if (el('modal').classList.contains('show')) el('modal').classList.remove('show');
+});
+
+/* ---------------- 人脸核验（摄像头接管） ----------------
+ * 页面里的 getUserMedia 被脚本接管了，画面由这里提供：
+ *   实时模式：本机摄像头 → canvas 截帧 → POST 给 node → 页面按帧率拉取
+ *   照片模式：一张正脸照，页面端加轻微呼吸感
+ */
+let camList = [];
+let camPick = null;
+let camLocal = null;
+let camPushTimer = null;
+let camPreviewTimer = null;
+let camSending = false;
+let camMode = null;        // live=本机摄像头  video=本地视频循环  photo=一张照片
+let camVideoUrl = null;    // 视频 blob URL，切走/关闭时要 revoke
+let camVideoName = '';
+
+function camStateOf(userId) {
+  return camList.find((x) => x.userId === userId) || null;
+}
+
+let camTitleTimer = null;
+
+function renderCamPill() {
+  const pend = camList.filter((x) => x.state === 'pending').length;
+  const live = camList.filter((x) => x.state === 'live').length;
+  const idle = camList.filter((x) => x.state === 'idle').length;
+  const badge = el('camBadge');
+  if (pend > 0) {
+    badge.hidden = false;
+    badge.textContent = pend;
+    el('camPill').classList.add('alert');
+  } else {
+    badge.hidden = true;
+    el('camPill').classList.remove('alert');
+  }
+  el('camText').textContent = live > 0 ? '核验中' : (pend > 0 ? '待核验' : (idle > 0 ? '视频待命' : '人脸核验'));
+
+  // 人可能不在这个标签页：标题闪一下，别让人一直干等
+  if (pend > 0) {
+    if (!camTitleTimer) {
+      let flip = false;
+      camTitleTimer = setInterval(() => {
+        flip = !flip;
+        document.title = (flip ? '【人脸核验】' : '') + 'OCS 用户控制台';
+      }, 900);
+    }
+  } else if (camTitleTimer) {
+    clearInterval(camTitleTimer);
+    camTitleTimer = null;
+    document.title = 'OCS 用户控制台';
+  }
+}
+
+function renderCamList() {
+  const box = el('camList');
+  if (!camList.length) {
+    box.innerHTML = '<p class="hint" style="padding:8px;margin:0">暂无请求</p>';
+    return;
+  }
+  const label = { pending: '等待画面', live: '供帧中', idle: '视频待命', ended: '已结束', refused: '已拒绝' };
+  box.innerHTML = camList.map((u) => `
+    <button class="cam-item ${u.userId === camPick ? 'active' : ''}" data-uid="${escapeHtml(u.userId)}">
+      <b>${escapeHtml(u.name)}</b>
+      <i>${u.width}×${u.height}${u.frames ? ' · ' + u.frames + ' 帧' : ''}</i>
+      <span class="st ${u.state}">${label[u.state] || u.state}</span>
+    </button>`).join('');
+  box.querySelectorAll('.cam-item').forEach((b) => {
+    b.onclick = () => selectCam(b.dataset.uid);
+  });
+}
+
+function updateCamButtons() {
+  const s = camStateOf(camPick);
+  const usable = !!(s && (s.state === 'pending' || s.state === 'live' || s.state === 'idle'));
+  el('btnCamLive').disabled = !usable;
+  el('btnCamStop').disabled = !usable;
+  el('btnCamRefuse').disabled = !usable;
+  el('btnCamSnap').disabled = !usable || camMode !== 'live';
+  el('camFileLabel').classList.toggle('disabled', !usable);
+  el('camVideoLabel').classList.toggle('disabled', !usable);
+  el('camVideoLabel').classList.toggle('playing', camMode === 'video');
+  if (el('camVideoLabel').firstChild && el('camVideoLabel').firstChild.nodeType === 3) {
+    el('camVideoLabel').firstChild.nodeValue = camMode === 'video' ? '更换视频' : '上传视频';
+  }
+
+  const hint = el('camHint');
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    el('btnCamLive').disabled = true;
+    hint.innerHTML = '当前地址不是 <strong>localhost</strong> 或 https，浏览器不允许调用摄像头。' +
+      '改用「上传照片」，或在服务器本机用 <strong>http://127.0.0.1:' + (location.port || 8899) + '</strong> 打开本页面。';
+  }
+}
+
+async function loadCamList() {
+  try {
+    const r = await api('/api/camera');
+    camList = r.list || [];
+  } catch (e) {
+    camList = [];
+  }
+  renderCamPill();
+  renderCamList();
+  updateCamButtons();
+}
+
+function showCamStage() {
+  const s = camStateOf(camPick);
+  const img = el('camShot');
+  const video = el('camVideo');
+  const empty = el('camEmpty');
+  const tag = el('camTag');
+
+  if (camLocal || camVideoUrl) {
+    video.classList.add('on');
+    img.classList.remove('on');
+    empty.hidden = true;
+    tag.hidden = false;
+    if (camMode === 'video') {
+      tag.textContent = s && s.state === 'idle'
+        ? '视频循环 · 待命（下次抓拍自动接上）'
+        : '视频循环' + (camVideoName ? ' · ' + camVideoName : '') + ' · 正在发送';
+    } else {
+      tag.textContent = '本机摄像头 · 正在发送';
+    }
+    return;
+  }
+  video.classList.remove('on');
+  if (s && s.hasFrame) {
+    img.classList.add('on');
+    empty.hidden = true;
+    tag.hidden = false;
+    tag.textContent = (s.mode === 'photo' ? '照片模式' : s.mode === 'video' ? '视频循环' : '画面中') + ' · ' + s.width + '×' + s.height;
+  } else {
+    img.classList.remove('on');
+    empty.hidden = false;
+    tag.hidden = true;
+    empty.textContent = s
+      ? (s.state === 'ended' || s.state === 'refused' ? '这次核验已结束' : '等待你提供画面…')
+      : '还没有页面请求摄像头';
+  }
+}
+
+function tickCamPreview() {
+  const s = camStateOf(camPick);
+  if (!s || !s.hasFrame || camLocal || camVideoUrl) return;
+  el('camShot').src = '/api/camera/' + encodeURIComponent(camPick) + '/preview?t=' + Date.now();
+}
+
+function startCamPreview() {
+  stopCamPreview();
+  if (!el('camModal').classList.contains('show')) return;
+  tickCamPreview();
+  camPreviewTimer = setInterval(() => {
+    if (document.hidden) return;
+    tickCamPreview();
+  }, 400);
+}
+
+function stopCamPreview() {
+  if (camPreviewTimer) clearInterval(camPreviewTimer);
+  camPreviewTimer = null;
+}
+
+function selectCam(uid) {
+  if (camPick !== uid && (camLocal || camVideoUrl)) stopCamLocal();
+  camPick = uid;
+  renderCamList();
+  updateCamButtons();
+  showCamStage();
+  startCamPreview();
+}
+
+async function pushCamFrame(canvas) {
+  if (!camPick || camSending) return;
+  camSending = true;
+  try {
+    const image = canvas.toDataURL('image/jpeg', 0.72);
+    await api('/api/camera/' + encodeURIComponent(camPick) + '/frame', {
+      method: 'POST',
+      body: JSON.stringify({ image })
+    });
+  } catch (e) {
+    // 单帧失败不打断，下一帧继续
+  } finally {
+    camSending = false;
+  }
+}
+
+/** 把视频/摄像头的画面按 cover 铺满 640×480，避免竖屏视频被拉伸变形 */
+function drawCover(c2d, src, w, h) {
+  const sw = src.videoWidth || src.width || 0;
+  const sh = src.videoHeight || src.height || 0;
+  if (!sw || !sh) return false;
+  const scale = Math.max(w / sw, h / sh);
+  const dw = sw * scale;
+  const dh = sh * scale;
+  c2d.drawImage(src, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  return true;
+}
+
+/** 定时抽帧推给服务端。视频模式在后台也继续推：网课抓拍随时可能发生 */
+function startCamPushLoop(v) {
+  if (camPushTimer) clearTimeout(camPushTimer);
+  const cv = document.createElement('canvas');
+  cv.width = 640;
+  cv.height = 480;
+  const c2d = cv.getContext('2d');
+  const tick = () => {
+    const st = camStateOf(camPick);
+    // 页面没在抓拍（idle）时降到约 1 秒一帧：画面保持新鲜，又不白烧 CPU
+    const wait = st && st.state === 'idle' ? 900 : 110;
+    if (!(document.hidden && camMode !== 'video') && drawCover(c2d, v, 640, 480)) {
+      pushCamFrame(cv);
+    }
+    camPushTimer = setTimeout(tick, wait);
+  };
+  tick();
+}
+
+function stopCamLocal(silent) {
+  if (camPushTimer) clearTimeout(camPushTimer);
+  camPushTimer = null;
+  if (camLocal) {
+    camLocal.getTracks().forEach((t) => { try { t.stop(); } catch (e) {} });
+    camLocal = null;
+  }
+  const v = el('camVideo');
+  try { v.pause(); } catch (e) {}
+  v.srcObject = null;
+  if (camVideoUrl) {
+    v.removeAttribute('src');
+    try { v.load(); } catch (e) {}
+    URL.revokeObjectURL(camVideoUrl);
+    camVideoUrl = null;
+  }
+  camVideoName = '';
+  camMode = null;
+  v.classList.remove('on');
+  el('btnCamSnap').disabled = true;
+  if (!silent) {
+    updateCamButtons();
+    showCamStage();
+  }
+}
+
+async function startCamLocal() {
+  if (!camPick) return;
+  const hint = el('camHint');
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      audio: false
+    });
+  } catch (e) {
+    hint.innerHTML = '<span class="cam-hint-warn">打不开摄像头：' + escapeHtml(e.message || e) + '。可以改用「上传照片」或「上传视频」。</span>';
+    return;
+  }
+  stopCamLocal(true);
+  camLocal = stream;
+  camMode = 'live';
+  const v = el('camVideo');
+  v.loop = false;
+  v.srcObject = camLocal;
+  await v.play().catch(() => {});
+  showCamStage();
+  updateCamButtons();
+
+  await api('/api/camera/' + encodeURIComponent(camPick) + '/start', {
+    method: 'POST',
+    body: JSON.stringify({ mode: 'live' })
+  }).catch(() => {});
+
+  startCamPushLoop(v);
+}
+
+/** 上传一段视频：本地循环播放，抽帧推给页面，页面抓拍拿到的就是视频画面 */
+async function startCamVideo(file) {
+  if (!camPick || !file) return;
+  const hint = el('camHint');
+  const prev = camStateOf(camPick);
+  const keepIdle = !!(prev && prev.state === 'idle'); // 待命中换视频：不要把它变回「供帧中」
+  stopCamLocal(true);
+
+  const url = URL.createObjectURL(file);
+  const v = el('camVideo');
+  v.loop = true;
+  v.muted = true;
+  v.playsInline = true;
+  v.srcObject = null;
+  v.src = url;
+  camVideoUrl = url;
+  camVideoName = file.name.length > 22 ? file.name.slice(0, 19) + '…' : file.name;
+  camMode = 'video';
+
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        if (v.videoWidth) resolve();
+        else reject(new Error('读取视频超时，文件可能损坏或编码不支持'));
+      }, 8000);
+      function cleanup() {
+        clearTimeout(timer);
+        v.onloadedmetadata = null;
+        v.onerror = null;
+      }
+      v.onloadedmetadata = () => { cleanup(); resolve(); };
+      v.onerror = () => { cleanup(); reject(new Error('这个视频打不开，换 mp4 (H.264) 或 webm 试试')); };
+      v.load();
+    });
+    await v.play();
+  } catch (e) {
+    stopCamLocal(true);
+    hint.innerHTML = '<span class="cam-hint-warn">' + escapeHtml(e.message || e) + '</span>';
+    showCamStage();
+    updateCamButtons();
+    return;
+  }
+
+  showCamStage();
+  updateCamButtons();
+  if (!keepIdle) {
+    await api('/api/camera/' + encodeURIComponent(camPick) + '/start', {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'video' })
+    }).catch(() => {});
+  }
+
+  startCamPushLoop(v);
+  hint.innerHTML = '视频已在本地循环播放，页面抓拍（包括进入课程后的中途抓拍）都会拿到这段视频的画面。' +
+    '<br>保持本页面打开即可，切到别的窗口也会继续发送。';
+}
+
+async function snapCamOnce() {
+  const v = el('camVideo');
+  if (!camPick || !camLocal || !v.videoWidth) return;
+  const cv = document.createElement('canvas');
+  cv.width = 640;
+  cv.height = 480;
+  drawCover(cv.getContext('2d'), v, 640, 480);
+  await pushCamFrame(cv);
+}
+
+/** 照片按 cover 裁到 640×480，不拉伸变形 */
+function fitPhotoToCanvas(img, w, h) {
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const c2d = cv.getContext('2d');
+  const scale = Math.max(w / img.width, h / img.height);
+  const dw = img.width * scale;
+  const dh = img.height * scale;
+  c2d.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  return cv;
+}
+
+async function uploadCamPhoto(file) {
+  if (!camPick || !file) return;
+  stopCamLocal(true); // 正在推摄像头/视频就停掉，否则下一帧会把照片盖掉
+  camMode = 'photo';
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error('图片打不开'));
+      im.src = url;
+    });
+    const cv = fitPhotoToCanvas(img, 640, 480);
+    await api('/api/camera/' + encodeURIComponent(camPick) + '/start', {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'photo' })
+    });
+    await api('/api/camera/' + encodeURIComponent(camPick) + '/frame', {
+      method: 'POST',
+      body: JSON.stringify({ image: cv.toDataURL('image/jpeg', 0.82) })
+    });
+    el('camHint').textContent = '照片已发送，页面那边应该能看到视频画面了。';
+    setTimeout(loadCamList, 300);
+  } catch (e) {
+    el('camHint').innerHTML = '<span class="cam-hint-warn">' + escapeHtml(e.message || e) + '</span>';
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function openCam() {
+  el('camModal').classList.add('show');
+  await loadCamList();
+  const first = camList.find((x) => x.state === 'pending') || camList.find((x) => x.state === 'live') || camList[0];
+  if (first) selectCam(first.userId);
+  else {
+    camPick = null;
+    showCamStage();
+    updateCamButtons();
+  }
+  startCamPreview();
+}
+
+function closeCam() {
+  el('camModal').classList.remove('show');
+  const wasLive = !!(camLocal || camVideoUrl);
+  const uid = camPick;
+  stopCamLocal(true);
+  stopCamPreview();
+  // 正在推流就把这次核验结束掉：否则页面那边会停在最后一帧，看着像卡死
+  if (wasLive && uid) {
+    fetch('/api/camera/' + encodeURIComponent(uid) + '/stop', { method: 'POST' }).catch(() => {});
+  }
+}
+
+/* ---------------- 初始化 ---------------- */
+// 单个用户的 AI 弹窗复用全局那份服务商列表，免得两处选项走偏
+el('uaiProvider').innerHTML = el('aiProvider').innerHTML;
+
+const es = new EventSource('/api/logs/stream');
+es.onmessage = (e) => {
+  try { pushLog(JSON.parse(e.data)); } catch (err) {}
+};
+
+// 人脸核验状态由服务端推过来：有页面请求摄像头时立刻亮红点，不用等轮询
+es.addEventListener('camera', (e) => {
+  try {
+    const d = JSON.parse(e.data);
+    camList = d.list || [];
+    renderCamPill();
+    if (el('camModal').classList.contains('show')) {
+      renderCamList();
+      const s = camStateOf(camPick);
+      if (camPick && (!s || s.state === 'ended' || s.state === 'refused')) {
+        stopCamLocal(true);
+      }
+      updateCamButtons();
+      showCamStage();
+    }
+  } catch (err) {}
+});
+
+// 每秒刷画面。标签页在后台时不截图：既省 CPU，也不会因为定时器被浏览器降频而堆积请求
+setInterval(() => {
+  if (document.hidden) return;
+  if (lightboxOpen) refreshScreen(true);
+  // 窗口关着时也要跑一次：否则右侧一直留着上一次的旧画面 / 初始占位
+  else if (el('live').checked && state) refreshScreen();
+}, 1000);
+
+// 状态 2 秒一次（界面不需要更快）；后台标签页停止轮询，切回来立刻补一次
+setInterval(() => {
+  if (document.hidden) return;
+  refresh();
+}, 2000);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  refresh();
+  refreshScreen(true);
+});
+
+(async () => {
+  // 先恢复界面偏好，再决定右侧看谁：避免刷新时先闪一下「未选择用户」
+  const prefs = loadUiPrefs();
+  if (typeof prefs.live === 'boolean') el('live').checked = prefs.live;
+  try {
+    lastSession = await api('/api/session');
+    if (lastSession && lastSession.lastUserId) selectedTaskId = lastSession.lastUserId;
+  } catch (e) {}
+  if (!selectedTaskId && prefs.lastUserId) selectedTaskId = prefs.lastUserId;
+  await refresh();
+  await loadLogs();
+  loadCamList().catch(() => {});
+})();
+
+el('live').addEventListener('change', saveUiPrefs);
+</script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# 运行时数据：登录态、GM 存储、日志都在这里，绝不入库
+data/
+logs/
+*.log
+
+# 依赖由 npm ci 安装，node_modules 不入库
+node_modules/
+
+# 打包产物
+*.tar.gz
+old-packages/
+
+# 系统杂项
+.DS_Store
+Thumbs.db

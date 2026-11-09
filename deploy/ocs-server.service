@@ -1,0 +1,21 @@
+[Unit]
+Description=OCS Server (browser-based course assistant)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 改成你的实际路径与用户
+WorkingDirectory=/opt/ocs-server
+ExecStart=/usr/bin/node src/server.js
+Environment=NODE_ENV=production
+Environment=OCS_PORT=8899
+# 若用 Google Chrome 而不是系统 chromium，改成 /usr/bin/google-chrome
+Environment=CHROME_PATH=/usr/bin/chromium
+Restart=always
+RestartSec=5
+# Chromium 需要较大的可写临时空间
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target

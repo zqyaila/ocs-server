@@ -1,0 +1,20 @@
+services:
+  ocs:
+    build: .
+    image: ocs-server:latest
+    container_name: ocs-server
+    restart: unless-stopped
+    ports:
+      - "8899:8899"
+    volumes:
+      - ./data:/data
+    environment:
+      TZ: Asia/Shanghai
+      OCS_PORT: "8899"
+    # Chromium 需要较大的 /dev/shm，否则容易崩
+    shm_size: "512mb"
+    # 低功耗设备建议限制资源，避免把整机拖垮
+    mem_limit: 1500m
+    cpus: "1.5"
+    security_opt:
+      - seccomp=unconfined
