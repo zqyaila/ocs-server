@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name       				OCS 网课助手 - 全域名通用版
-// @version    				5.3.1
-// @description				【已集成 AI 答题：可在 通用-全局设置 中配置任意 OpenAI 兼容接口，用大模型答题】OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 【雨课堂】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
+// @name       				OCS 网课助手
+// @version    				5.4.1
+// @description				OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 【雨课堂】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
 // @author     				enncy
 // @license    				MIT
 // @match      				*://*.zhihuishu.com/*
@@ -37,6 +37,7 @@
 // @match      				*://*.zyk.icve.com.cn/*
 // @match      				*://*.icourse163.org/*
 // @match      				*://*.yuketang.cn/*
+// @match      				*://*.xuetangx.com/*
 // @match      				*://*.gdufemooc.cn/*
 // @grant      				GM_info
 // @grant      				GM_getTab
@@ -63,7 +64,6 @@
 // @connect    				localhost
 // @connect    				127.0.0.1
 // @connect    				aliyuncs.com
-// @connect    				*
 // @antifeature				payment
 // ==/UserScript==
 
@@ -4403,20 +4403,9 @@ var __publicField = (obj, key, value) => {
       }
     };
   }
-  // ============================================================
-  // AI 答题（把「大模型接口」当成一个内置题库来使用）
-  //
-  // 使用方式：
-  //   通用 - 全局设置 - 自动答题设置 - AI 答题 - 点击配置
-  //   填写任意 OpenAI 兼容的接口地址（Base URL）、API Key 与模型名称即可；
-  //   开启后，答题时会自动把「题目 + 选项」发送给大模型，
-  //   并把模型返回的答案转换成脚本可识别的格式，再走原有的选项匹配/提交逻辑。
-  //
-  // 说明：
-  //   - AI 可与普通题库并存，两者并行请求，AI 的结果排在前面；
-  //   - 配置保存在本机浏览器（GM 存储），不会上传到任何第三方服务器；
-  //   - 支持图片题（需模型本身支持视觉能力，且开启了「图片题优化」）。
-  // ============================================================
+  const AnswerWrapperHandlerConfig = {
+    timeout_seconds: 60
+  };
   const AI_ANSWERER_PROVIDERS = [
     {
       id: "openai",
@@ -5153,9 +5142,6 @@ var __publicField = (obj, key, value) => {
     });
     return modal;
   }
-  const AnswerWrapperHandlerConfig = {
-    timeout_seconds: 60
-  };
   async function defaultAnswerWrapperHandler(answererWrappers, env) {
     const searchInfos = [];
     const temp = Array.isArray(answererWrappers) ? JSON.parse(JSON.stringify(answererWrappers)) : [];
@@ -5492,7 +5478,7 @@ var __publicField = (obj, key, value) => {
             console.groupEnd();
             console.group(
               "开始搜题: ",
-              (_c2 = ctx.elements.title) == null ? void 0 : _c2.map((t2) => t2 == null ? void 0 : t2.innerText).filter(Boolean).join(", ").slice(0, 20)
+              (_c2 = ctx.elements.title) == null ? void 0 : _c2.map((t2) => t2 == null ? void 0 : t2.innerText).filter(Boolean).join(", ")
             );
             console.log("ctx", result.ctx);
           }
@@ -5581,7 +5567,7 @@ var __publicField = (obj, key, value) => {
           if (options == null ? void 0 : options.enable_debug) {
             console.log(
               "答题完成: ",
-              (_b2 = (_a2 = result.ctx) == null ? void 0 : _a2.elements.title) == null ? void 0 : _b2.map((t2) => t2 == null ? void 0 : t2.innerText).join(", ").slice(0, 20),
+              (_b2 = (_a2 = result.ctx) == null ? void 0 : _a2.elements.title) == null ? void 0 : _b2.map((t2) => t2 == null ? void 0 : t2.innerText).join(", "),
               result
             );
           }
@@ -11488,16 +11474,20 @@ ${content}</tr>
                             modal2 == null ? void 0 : modal2.remove();
                           };
                         }),
-                        lib.h("button", { className: "base-style-button", innerText: "前往更新" }, (btn) => {
-                          btn.onclick = () => {
-                            if (updatePage) {
-                              window.open(updatePage, "_blank");
-                              modal2 == null ? void 0 : modal2.remove();
-                            } else {
-                              lib.$message.error({ content: "无法前往更新页面，更新链接为空" });
-                            }
-                          };
-                        })
+                        lib.h(
+                          "button",
+                          { className: "base-style-button", style: { marginLeft: "4px" }, innerText: "前往更新" },
+                          (btn) => {
+                            btn.onclick = () => {
+                              if (updatePage) {
+                                window.open(updatePage, "_blank");
+                                modal2 == null ? void 0 : modal2.remove();
+                              } else {
+                                lib.$message.error({ content: "无法前往更新页面，更新链接为空" });
+                              }
+                            };
+                          }
+                        )
                       ])
                     });
                   }
@@ -11845,7 +11835,7 @@ ${content}</tr>
                 onerror == null ? void 0 : onerror.apply(this, [response]);
               };
             }
-            return gmRequest.apply(window, [details]);
+            return gmRequest.apply(this, [details]);
           };
           fetch = (input, init) => {
             if (this.cfg.enable) {
@@ -11862,7 +11852,7 @@ ${content}</tr>
                 time: Date.now()
               };
               addRecord(data);
-              const res = originalFetch.apply(window, [input, init]);
+              const res = originalFetch.apply(this, [input, init]);
               res.then((result) => {
                 return result.clone().text();
               }).then((result) => {
@@ -11877,7 +11867,7 @@ ${content}</tr>
               });
               return res;
             } else {
-              return originalFetch.apply(window, [input, init]);
+              return originalFetch.apply(this, [input, init]);
             }
           };
         }
@@ -11939,8 +11929,7 @@ ${content}</tr>
             CXProject.scripts.autoRead,
             ZHSProject.scripts["study-center"],
             ZHSProject.scripts["work-center"],
-            ICourseProject.scripts.study_v2,
-            [ICourseProject.scripts.dispatcher, ICourseProject.scripts.study],
+            ICourseProject.scripts["study-center"],
             ICourseProject.scripts.work,
             [ZJYProject.scripts.dispatcher, ZJYProject.scripts.study],
             ZJYProject.scripts.work,
@@ -11999,7 +11988,7 @@ ${content}</tr>
       };
     }
   });
-  const playbackRate$1 = {
+  const playbackRate$2 = {
     label: "视频倍速",
     tag: "select",
     options: [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4, 6, 8, 16].map((rate) => [rate.toString(), rate + " x"]),
@@ -12029,7 +12018,7 @@ ${content}</tr>
   };
   const workNotes$1 = {
     defaultValue: lib.$ui.notes([
-      "自动答题前请在 “通用-全局设置” 中设置题库配置，或配置「AI 答题」使用大模型答题。",
+      "自动答题前请在 “通用-全局设置” 中设置题库配置。",
       "可以搭配 “通用-在线搜题” 一起使用。",
       "⚠️禁止同时开多个作业/考试页面。"
     ]).outerHTML
@@ -13056,7 +13045,7 @@ ${content}</tr>
     };
     answererWrapperUnsetMessage == null ? void 0 : answererWrapperUnsetMessage.remove();
     answererWrapperUnsetMessage = lib.$message.warn({
-      content: lib.h("span", {}, ["你还没设置题库或 AI 答题，无法自动答题，请切换到 ", setting, " 页面进行配置。"]),
+      content: lib.h("span", {}, ["你还没设置 AI 答题，无法自动答题，请切换到 ", setting, " 页面进行配置。"]),
       duration
     });
   });
@@ -13746,9 +13735,12 @@ ${content}</tr>
           notes: {
             defaultValue: lib.$ui.notes([
               "✨鼠标移动到按钮或者输入框，可以看到提示！",
-              "想要自动答题必须设置 “题库配置”，或在「AI 答题」中配置大模型接口。",
+              "本版本只使用 AI 答题，请在下方「AI 答题（大模型答题）」里填写接口与密钥。",
               "设置后进入章节测试，作业，考试页面即可自动答题。"
             ]).outerHTML
+          },
+          OCS_TYPE: {
+            defaultValue: ""
           },
           answererWrappers: {
             separator: "自动答题设置",
@@ -13760,455 +13752,38 @@ ${content}</tr>
           imageOptimizeWarnRecords: {
             defaultValue: []
           },
-          answererWrappersButton: {
-            label: "题库配置",
+          aiAnswererButton: {
+            label: "AI 答题（大模型答题）",
             defaultValue: "点击配置",
             attrs: {
-              type: "button"
-            },
-            suffixSlot() {
-              return getAnswererConfigProvider() ? createAnswererModeDropdown() : "";
+              type: "button",
+              title: "配置任意 OpenAI 兼容接口（DeepSeek / 通义千问 / Kimi / 智谱 / 本地 Ollama 等），用大模型为你答题"
             },
             onload() {
-              const aws = CommonProject.scripts.settings.cfg.answererWrappers || [];
-              this.value = aws.length ? aws.length + " 个可用题库（点击进入配置）" : "点击进入配置";
-              const openAnswererModal = (mode) => {
-                const aw = CommonProject.scripts.settings.cfg.answererWrappers || [];
-                const listContainer = lib.h("div");
-                const renderAnswererList = () => {
-                  const current = CommonProject.scripts.settings.cfg.answererWrappers || [];
-                  listContainer.replaceChildren(
-                    ...current.length ? [createAnswererWrapperSection(current, "已解析的题库配置：", answererListHandlers)] : []
-                  );
-                };
-                renderAnswererList();
-                const textarea = lib.h(
-                  "textarea",
-                  {
-                    className: "modal-input",
-                    style: { minHeight: "250px", width: "calc(100% - 20px)", maxWidth: "100%" },
-                    placeholder: aw.length ? "重新输入题库配置" : "输入你的题库配置...，不会请看上方填写教程"
-                  },
-                  aw.length === 0 ? "" : JSON.stringify(aw, null, 4)
-                );
-                const select = lib.$ui.tooltip(
-                  lib.h(
-                    "select",
-                    {
-                      className: "base-style-active-form-control",
-                      style: { backgroundColor: "#eef2f7", borderRadius: "2px", padding: "2px 8px" }
-                    },
-                    [
-                      lib.h("option", "默认"),
-                      lib.h(
-                        "option",
-                        {
-                          title: "大学生网课题库接口适配器: 将不同的题库整合为一个API接口。详细查看 https://github.com/DokiDoki1103/tikuAdapter"
-                        },
-                        "TikuAdapter"
-                      )
-                    ]
-                  )
-                );
-                const applyAws = async (awsResult, showSuccessModal = true) => {
-                  if (awsResult.length === 0) {
-                    lib.$modal.alert({ content: "题库配置不能为空，请重新配置。" });
-                    return false;
-                  }
-                  const result_set = [];
-                  for (const res of awsResult) {
-                    if (result_set.find((i) => JSON.stringify(i) === JSON.stringify(res))) {
-                      continue;
-                    }
-                    result_set.push(res);
-                  }
-                  awsResult = result_set;
-                  if (JSON.stringify(CommonProject.scripts.settings.cfg.answererWrappers) === JSON.stringify(awsResult)) {
-                    if (showSuccessModal) {
-                      lib.$modal.alert({ content: lib.h("div", ["✅️已应用题库配置，但您新配置的题库似乎没有变化~"]) });
-                    }
-                    return true;
-                  }
-                  if (awsResult.length > 10) {
-                    lib.$modal.alert({
-                      content: lib.h("div", [
-                        "题库配置过多可能会导致答题效率降低，建议不超过10个题库，目前解析到" + awsResult.length + "个题库，请删除一些不必要的题库后重新配置！"
-                      ])
-                    });
-                    return false;
-                  }
-                  const confirmed = await confirmRiskyAnswerWrappers(awsResult);
-                  if (!confirmed) {
-                    return false;
-                  }
-                  CommonEvents.emitAnswererChanged(awsResult, CommonProject.scripts.settings.cfg.answererWrappers);
-                  CommonProject.scripts.settings.cfg.answererWrappers = awsResult;
-                  this.value = "当前有" + awsResult.length + "个可用题库";
-                  if (showSuccessModal) {
-                    lib.$modal.confirm({
-                      width: 600,
-                      content: lib.h("div", [
-                        lib.h("div", ["🎉 配置成功，", lib.h("b", " 刷新界面 "), "或者", lib.h("b", " 重新答题 "), "即可生效。"]),
-                        createAnswererWrapperSection(awsResult, "解析到的题库如下所示：", answererListHandlers, false)
-                      ]),
-                      onConfirm: () => {
-                        if (lib.$gm.isInGMContext()) {
-                          top == null ? void 0 : top.document.location.reload();
-                        }
-                      },
-                      ...lib.$gm.isInGMContext() ? {
-                        confirmButtonText: "立即刷新",
-                        cancelButtonText: "稍后刷新"
-                      } : {}
-                    });
-                  }
-                  textarea.value = JSON.stringify(awsResult, null, 4);
-                  const connects = lib.$gm.getMetadataFromScriptHead("connect");
-                  if (connects.length) {
-                    const notAllowed = [];
-                    if (connects.includes("*")) {
-                      return true;
-                    }
-                    for (const aw2 of awsResult) {
-                      if (connects.some((connect) => new URL(aw2.url).hostname.includes(connect)) === false) {
-                        notAllowed.push(aw2.url);
-                      }
-                    }
-                    if (notAllowed.length) {
-                      lib.$modal.alert({
-                        width: 600,
-                        maskCloseable: false,
-                        title: "⚠️警告",
-                        content: lib.h("div", [
-                          lib.h("div", [
-                            "配置成功，但检测到以下 域名/ip 不在脚本的白名单中，请安装 : ",
-                            lib.h(
-                              "a",
-                              {
-                                href: "https://docs.ocsjs.com/docs/other/api#全域名通用版本"
-                              },
-                              "OCS全域名通用版本"
-                            ),
-                            "，或者手动添加 @connect ，否则无法进行请求。",
-                            lib.h(
-                              "ul",
-                              notAllowed.map((url) => lib.h("li", new URL(url).hostname))
-                            )
-                          ])
-                        ])
-                      });
-                    }
-                  }
-                  return true;
-                };
-                const provider2 = getAnswererConfigProvider();
-                const { el: connectStatus, setStatus: setConnectStatus } = createStatusBox();
-                const connectHero = provider2 ? (() => {
-                  let origin = provider2.connectUrl;
-                  try {
-                    origin = new URL(provider2.connectUrl).origin;
-                  } catch {
-                  }
-                  return createHero({
-                    icon: "🚀",
-                    title: "一键获取题库配置",
-                    subtitle: "打开题库网站并登录即可，配置自动回填，无需手动复制粘贴",
-                    extra: lib.h("span", [
-                      "题库源：",
-                      lib.h("b", provider2.name),
-                      "　官网：",
-                      lib.h("a", { href: origin, target: "_blank" }, origin)
-                    ])
-                  });
-                })() : void 0;
-                const connectSteps = provider2 ? createSteps(["点击下方获取按钮、打开题库小窗", "完成登录", "自动回填保存"]) : void 0;
-                const connectButton = provider2 ? lib.h("button", "点击前往获取题库", (btn) => {
-                  btn.className = "aw-connect-btn" + (aw.length ? "" : " lg");
-                  const defaultLabel = "点击前往获取题库";
-                  const setBtnLoading = (loading) => {
-                    btn.disabled = loading;
-                    btn.innerHTML = loading ? `${loadingSpinSvg}获取中 ...` : defaultLabel;
-                  };
-                  btn.onclick = async () => {
-                    var _a;
-                    const win = openAnswererConnect();
-                    if (!win) {
-                      setConnectStatus(
-                        "⚠️ 弹窗被浏览器拦截，请允许本站弹窗后重试，或点击题库配置旁的「⋯」选择「自定义题库」手动配置。",
-                        "error"
-                      );
-                      return;
-                    }
-                    setBtnLoading(true);
-                    setConnectStatus("⏳ 正在等待您在题库网站完成登录，登录后配置将自动回填保存。", "info");
-                    try {
-                      const aws2 = await waitForAnswererConfig(win, void 0, () => !(modal2 == null ? void 0 : modal2.isConnected));
-                      select.value = "默认";
-                      textarea.value = JSON.stringify(aws2, null, 4);
-                      const saved = await applyAws(aws2, false);
-                      if (saved) {
-                        await new Promise((resolve) => setTimeout(resolve, 1e3));
-                        for (let i = 3; i > 0; i--) {
-                          setConnectStatus(`✅ 题库配置已保存，${i} 秒后自动关闭小窗…`, "success");
-                          await new Promise((resolve) => setTimeout(resolve, 1e3));
-                        }
-                        setConnectStatus("✅ 题库配置已保存，重新答题或刷新界面 即可生效。", "success");
-                        try {
-                          win.close();
-                        } catch {
-                        }
-                      } else {
-                        setConnectStatus("⚠️ 配置未保存，请根据提示处理后重试。", "error");
-                      }
-                    } catch (e) {
-                      setConnectStatus("⚠️ " + ((_a = e == null ? void 0 : e.message) != null ? _a : "获取题库配置失败"), "error");
-                    } finally {
-                      setBtnLoading(false);
-                    }
-                  };
-                }) : void 0;
-                const manualNotes = lib.$ui.notes([
-                  [
-                    lib.h("div", { style: { fontSize: "16px", marginBottom: "8px" } }, [
-                      lib.h("b", "题库配置填写教程👉："),
-                      lib.h("a", { href: "https://docs.ocsjs.com/docs/work" }, "https://docs.ocsjs.com/docs/work")
-                    ])
-                  ],
-                  [
-                    lib.h(
-                      "div",
-                      {
-                        className: "secondary"
-                      },
-                      [
-                        "⚠️ 如果无法粘贴，请点->：",
-                        lib.h("button", "读取剪贴板", (btn) => {
-                          btn.classList.add("base-style-button");
-                          btn.onclick = () => {
-                            navigator.clipboard.readText().then((result) => {
-                              textarea.value = result;
-                            });
-                          };
-                        }),
-                        "，并同意浏览器上方的剪贴板读取申请。"
-                      ]
-                    )
-                  ],
-                  [
-                    lib.h(
-                      "div",
-                      { className: "secondary" },
-                      "⚠️ 如果想添加多个不同的题库配置，请在每个配置之间使用三个井号隔开: ###。"
-                    )
-                  ],
-                  [lib.h("div", { className: "secondary" }, "⚠️ 配置第三方题库出现网页弹窗的，点击永久允许连接。")]
-                ]);
-                const clearAnswererConfig = () => {
-                  lib.$modal.confirm({
-                    content: "确定要清空题库配置吗？",
-                    onConfirm: () => {
-                      lib.$message.success({ content: "已清空，在答题前请记得重新配置。" });
-                      modal2 == null ? void 0 : modal2.remove();
-                      CommonProject.scripts.settings.cfg.answererWrappers = [];
-                      this.value = "点击配置";
-                    }
-                  });
-                };
-                const enlargeFooterButton = (btn) => {
-                  btn.style.padding = "4px 12px";
-                  btn.style.fontSize = "14px";
-                };
-                const manualFooter = lib.h("div", { style: { width: "100%" } }, [
-                  lib.h("div", { className: "separator secondary" }, "题库配置填写/修改区"),
-                  textarea,
-                  lib.h("div", { style: { marginTop: "12px", fontSize: "12px" } }, [
-                    lib.h("div", { style: { marginBottom: "12px" } }, ["解析器：", select]),
-                    lib.h("div", { style: { display: "flex", flexWrap: "wrap", justifyContent: "flex-end" } }, [
-                      lib.h("button", "清空题库配置", (btn) => {
-                        btn.className = "modal-cancel-button";
-                        enlargeFooterButton(btn);
-                        btn.style.marginRight = "auto";
-                        btn.onclick = () => clearAnswererConfig();
-                      }),
-                      lib.h("button", "关闭", (btn) => {
-                        btn.className = "modal-cancel-button";
-                        enlargeFooterButton(btn);
-                        btn.style.marginRight = "12px";
-                        btn.onclick = () => modal2 == null ? void 0 : modal2.remove();
-                      }),
-                      lib.h("button", "保存配置", (btn) => {
-                        btn.className = "modal-confirm-button";
-                        enlargeFooterButton(btn);
-                        btn.onclick = async () => {
-                          const value = textarea.value;
-                          if (!value) {
-                            lib.$modal.alert({
-                              content: lib.h("div", "不能为空！")
-                            });
-                            return;
-                          }
-                          if (value.includes("adapter-service/search") && select.value === "TikuAdapter" === false) {
-                            lib.$modal.alert({
-                              content: lib.h("div", [
-                                "检测到您可能正在使用 ",
-                                lib.h(
-                                  "a",
-                                  { href: "https://github.com/DokiDoki1103/tikuAdapter#readme" },
-                                  "TikuAdapter 题库"
-                                ),
-                                "，但是您选择的解析器不是 TikuAdapter，请选择 TikuAdapter 解析器，并填写接口地址即可，例如：http://localhost:8060/adapter-service/search，或者忽略此警告。"
-                              ]),
-                              confirmButtonText: "切换至 TikuAdapter 解析器，并识别接口地址",
-                              onConfirm() {
-                                var _a;
-                                const origin = ((_a = textarea.value.match(/http:\/\/(.+)\/adapter-service\/search/)) == null ? void 0 : _a[1]) || "";
-                                textarea.value = `http://${origin}/adapter-service/search`;
-                                select.value = "TikuAdapter";
-                              }
-                            });
-                            return;
-                          }
-                          try {
-                            const awsResult = [];
-                            if (select.value === "TikuAdapter") {
-                              if (value.startsWith("http") === false) {
-                                lib.$modal.alert({
-                                  content: lib.h("div", [
-                                    "格式错误，TikuAdapter解析器只能解析 url 链接，请重新输入！或者查看：",
-                                    lib.h(
-                                      "a",
-                                      { href: "https://github.com/DokiDoki1103/tikuAdapter#readme" },
-                                      "https://github.com/DokiDoki1103/tikuAdapter#readme"
-                                    )
-                                  ])
-                                });
-                                return;
-                              }
-                              select.value = "默认";
-                              awsResult.push({
-                                name: "TikuAdapter题库",
-                                url: value,
-                                homepage: "https://github.com/DokiDoki1103/tikuAdapter",
-                                method: "post",
-                                type: "GM_xmlhttpRequest",
-                                contentType: "json",
-                                headers: {},
-                                data: {
-                                  question: "${title}",
-                                  options: {
-                                    handler: "return (env)=>env.options?.split('\\n')"
-                                  },
-                                  type: {
-                                    handler: " return (env)=> env.type === 'single' ? 0 : env.type === 'multiple' ? 1 : env.type === 'completion' ? 3 : env.type === 'judgement' ? 4 : undefined"
-                                  }
-                                },
-                                handler: "return (res)=>res.answer.allAnswer.map(i=>([res.question,i.join('#')]))"
-                              });
-                            } else {
-                              const contents = value.split("###").map((i) => i.trim()).filter(Boolean);
-                              for (const content of contents) {
-                                awsResult.push(...await AnswerWrapperParser.from(content));
-                              }
-                            }
-                            await applyAws(awsResult);
-                          } catch (e) {
-                            lib.$modal.alert({
-                              content: lib.h("div", [lib.h("div", "解析失败，原因如下 :"), lib.h("div", e.message)])
-                            });
-                          }
-                        };
-                      })
-                    ])
-                  ])
-                ]);
-                let modalContent;
-                let modalFooter;
-                if (mode === "official" && provider2 && connectHero && connectButton && connectSteps) {
-                  const connectPanel = lib.h("div", [connectHero, connectSteps, connectStatus, listContainer]);
-                  const connectFooter = lib.h(
-                    "div",
-                    {
-                      style: {
-                        width: "100%",
-                        position: "relative",
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        gap: "12px",
-                        marginTop: "24px"
-                      }
-                    },
-                    [
-                      ...aw.length ? [
-                        lib.h("button", "清空题库配置", (btn) => {
-                          btn.className = "modal-cancel-button";
-                          btn.style.padding = "2px 8px";
-                          btn.style.fontSize = "12px";
-                          btn.onclick = () => clearAnswererConfig();
-                        }),
-                        lib.h("button", "手动配置题库", (btn) => {
-                          btn.className = "modal-cancel-button";
-                          btn.style.padding = "2px 8px";
-                          btn.style.fontSize = "12px";
-                          btn.style.marginRight = "auto";
-                          btn.title = "手动填写或粘贴题库配置";
-                          btn.onclick = () => {
-                            modal2 == null ? void 0 : modal2.remove();
-                            openAnswererModal("custom");
-                          };
-                        })
-                      ] : [],
-                      lib.h("button", "关闭", (btn) => {
-                        btn.className = "modal-cancel-button";
-                        if (aw.length) {
-                          enlargeFooterButton(btn);
-                        } else {
-                          btn.style.padding = "8px 24px";
-                          btn.style.fontSize = "15px";
-                        }
-                        btn.onclick = () => modal2 == null ? void 0 : modal2.remove();
-                      }),
-                      connectButton
-                    ]
-                  );
-                  modalContent = connectPanel;
-                  modalFooter = connectFooter;
-                } else {
-                  modalContent = lib.h("div", [manualNotes, listContainer]);
-                  modalFooter = manualFooter;
-                }
-                const modal2 = lib.$modal.prompt({
-                  width: 600,
-                  maskCloseable: false,
-                  content: modalContent,
-                  footer: modalFooter
-                });
-                const awChangeListener = CommonProject.scripts.settings.onConfigChange(
-                  "answererWrappers",
-                  (_key, _value, remote) => {
-                    if (remote === false) {
-                      renderAnswererList();
-                    }
-                  }
-                );
-                if (modal2) {
-                  const originalRemove = modal2.remove.bind(modal2);
-                  modal2.remove = () => {
-                    CommonProject.scripts.settings.offConfigChange(awChangeListener);
-                    originalRemove();
-                  };
-                }
-                if (mode === "official" && aw.length === 0 && connectButton) {
-                  setTimeout(() => {
-                    if (modal2 == null ? void 0 : modal2.isConnected) {
-                      connectButton.click();
-                    }
-                  }, 1e3);
-                }
-              };
-              this.onclick = () => openAnswererModal(getAnswererConfigProvider() ? "official" : "custom");
-              this.openAnswererModal = openAnswererModal;
+              const el = this;
+              const update = () => renderAiAnswererButtonState(el);
+              update();
+              el.onclick = () => openAiAnswererModal(update);
+              if (el.__aiAnswererListener) {
+                CommonProject.scripts.settings.offConfigChange(el.__aiAnswererListener);
+              }
+              el.__aiAnswererListener = CommonProject.scripts.settings.onConfigChange("aiAnswerer", () => update());
+            }
+          },
+          aiAnswerer: {
+            defaultValue: createDefaultAiAnswererConfig()
+          },
+          answererWrappersButton: {
+            label: "题库配置（已移除）",
+            defaultValue: "本版本只使用 AI 答题",
+            attrs: {
+              type: "button",
+              title: "本版本已移除题库，答题全部交给「AI 答题」。如需题库请使用其他版本。"
+            },
+            onload() {
+              this.disabled = true;
+              this.style.opacity = "0.45";
+              this.style.cursor = "not-allowed";
             }
           },
           upload: {
@@ -14395,27 +13970,6 @@ ${content}</tr>
               });
             }
           },
-          aiAnswererButton: {
-            label: "AI 答题（大模型答题）",
-            defaultValue: "点击配置",
-            attrs: {
-              type: "button",
-              title: "配置任意 OpenAI 兼容接口（DeepSeek / 通义千问 / Kimi / 智谱 / 本地 Ollama 等），用大模型为你答题"
-            },
-            onload() {
-              const el = this;
-              const update = () => renderAiAnswererButtonState(el);
-              update();
-              el.onclick = () => openAiAnswererModal(update);
-              if (el.__aiAnswererListener) {
-                CommonProject.scripts.settings.offConfigChange(el.__aiAnswererListener);
-              }
-              el.__aiAnswererListener = CommonProject.scripts.settings.onConfigChange("aiAnswerer", () => update());
-            }
-          },
-          aiAnswerer: {
-            defaultValue: createDefaultAiAnswererConfig()
-          },
           notification: {
             separator: "其他设置",
             label: "系统通知",
@@ -14473,7 +14027,8 @@ ${content}</tr>
             }
           };
         },
-        oncomplete() {
+        oncomplete({ OCS_TYPE }) {
+          this.cfg.OCS_TYPE = OCS_TYPE;
           AnswerWrapperHandlerConfig.timeout_seconds = this.cfg.answerWrapperHandlerTimeout;
           this.onConfigChange("answerWrapperHandlerTimeout", (sec) => {
             AnswerWrapperHandlerConfig.timeout_seconds = sec;
@@ -14484,7 +14039,7 @@ ${content}</tr>
               return;
             }
             const wrappers = this.cfg.answererWrappers || [];
-            if (!this.cfg.imageOptimize || isAiAnswererImageReady() || wrappers.length === 0 || isAnswererWrappersSupportImageOptimize(wrappers)) {
+            if (!this.cfg.imageOptimize || wrappers.length === 0 || isAnswererWrappersSupportImageOptimize(wrappers)) {
               (_a = state$6.setting.imageOptimizeMessage) == null ? void 0 : _a.remove();
               state$6.setting.imageOptimizeMessage = void 0;
               return;
@@ -14788,7 +14343,7 @@ ${content}</tr>
           });
           const search = async (value) => {
             if (!hasAnswererSource(CommonProject.scripts.settings.cfg.answererWrappers)) {
-              lib.$modal.alert({ content: "请先在 通用-全局设置 配置题库或「AI 答题」，才能进行在线搜题。" });
+              lib.$modal.alert({ content: "请先在 通用-全局设置 配置题库，才能进行在线搜题。" });
               return;
             }
             content.replaceChildren(lib.h("span", "搜索中..."));
@@ -15035,7 +14590,7 @@ ${content}</tr>
     }
     return lib.h("div", { className: "alert-info-wrapper" }, [info != null ? info : lib.h("div")]);
   }
-  const playbackRate = {
+  const playbackRate$1 = {
     label: "视频倍速",
     tag: "select",
     attrs: { title: "目前智慧树倍速最高只能1.5x，超出有封号风险" },
@@ -15051,7 +14606,7 @@ ${content}</tr>
     attrs: { type: "checkbox", title: "当视频出现加载失败，或者黑屏等异常时，自动刷新页面3次尝试修复" },
     defaultValue: true
   };
-  const studyNotes = {
+  const studyNotes$1 = {
     defaultValue: lib.$ui.notes([
       "请手动进入视频、作业、考试页面，脚本会自动运行。",
       "章节测试/掌握度请大家观看完视频后手动打开。",
@@ -15068,7 +14623,7 @@ ${content}</tr>
   };
   const workNotes = {
     defaultValue: lib.$ui.notes([
-      "自动答题前请在 “通用-全局设置” 中设置题库配置，或配置「AI 答题」使用大模型答题。",
+      "自动答题前请在 “通用-全局设置” 中设置题库配置。",
       "可以搭配 “通用-在线搜题” 一起使用。",
       "⚠️ 如果没开始答题，请尝试刷新页面。",
       "⚠️ 禁止一次性打开多个作业/考试页面。",
@@ -15118,8 +14673,8 @@ ${content}</tr>
     defaultValue: false
   };
   const studyCenterConfigs = {
-    notes: studyNotes,
-    playbackRate,
+    notes: studyNotes$1,
+    playbackRate: playbackRate$1,
     volume,
     definition,
     restudy,
@@ -15150,6 +14705,8 @@ ${content}</tr>
     "zhs.hike.homework"
   ];
   const zhsWorkNamespace = "zhs.work";
+  const legacyIcourseStudyNamespaces = ["icourse.study-v1", "icourse.study-v2"];
+  const icourseStudyNamespace = "icourse.study";
   function migrateNamespace(sourceNamespaces, targetNamespace) {
     for (const ns of sourceNamespaces) {
       for (const key of lib.$store.list()) {
@@ -15168,6 +14725,9 @@ ${content}</tr>
   }
   function migrateZhsWorkConfigs() {
     migrateNamespace(legacyZhsWorkNamespaces, zhsWorkNamespace);
+  }
+  function migrateIcourseStudyConfigs() {
+    migrateNamespace(legacyIcourseStudyNamespaces, icourseStudyNamespace);
   }
   async function waitForMedia(options) {
     var _a;
@@ -15235,7 +14795,12 @@ ${content}</tr>
       if (timeout_seconds != null) {
         timeoutId = setTimeout(() => {
           cleanup();
-          reject(new Error(timeout_message != null ? timeout_message : `waitFor timeout ${timeout_seconds}s`));
+          if (timeout_message != null) {
+            reject(new Error(timeout_message));
+          } else {
+            console.warn(`[等待超时] ${timeout_seconds} 秒内条件未满足，继续执行`);
+            resolve(void 0);
+          }
         }, timeout_seconds * 1e3);
       }
     });
@@ -15842,7 +15407,7 @@ ${content}</tr>
           reloadWhenError,
           volume,
           definition,
-          playbackRate
+          playbackRate: playbackRate$1
         },
         methods() {
           return {
@@ -16142,7 +15707,7 @@ ${content}</tr>
           restudy,
           volume,
           definition,
-          playbackRate
+          playbackRate: playbackRate$1
         },
         oncomplete() {
           migrateZhsStudyConfigs();
@@ -16537,7 +16102,7 @@ ${content}</tr>
           reloadWhenError,
           volume,
           definition,
-          playbackRate
+          playbackRate: playbackRate$1
         },
         async oncomplete() {
           migrateZhsStudyConfigs();
@@ -16782,7 +16347,7 @@ ${content}</tr>
           reloadWhenError,
           volume,
           definition,
-          playbackRate
+          playbackRate: playbackRate$1
         },
         async oncomplete(...args) {
           migrateZhsStudyConfigs();
@@ -17195,8 +16760,15 @@ ${content}</tr>
             attrs: { type: "number", min: 1, step: 1, max: 10 }
           }
         },
-        async oncomplete() {
+        oncomplete() {
           var _a;
+          (_a = this.onhistorychanged) == null ? void 0 : _a.call(this, "pushed");
+        },
+        async onhistorychanged(type) {
+          var _a;
+          lib.$message.info("onhistorychange " + type);
+          if (type !== "pushed")
+            return;
           migrateZhsWorkConfigs();
           BackgroundProject.scripts.render.methods.pin(this);
           const msg = lib.$message.info({ duration: 0, content: "等待界面加载中..." });
@@ -19059,7 +18631,7 @@ self.onmessage = function (e) {
               ["⚠️目前超星倍速风控严重，如果高倍速", "被平台清空进度，请调到1-2倍速学习！"]
             ]).outerHTML
           },
-          playbackRate: { ...playbackRate$1, attrs: { title: HIGHT_PLAYBACK_RATE_WARNS.join("\n") } },
+          playbackRate: { ...playbackRate$2, attrs: { title: HIGHT_PLAYBACK_RATE_WARNS.join("\n") } },
           volume,
           videoQuizStrategy: {
             label: "视频内题目",
@@ -19174,7 +18746,7 @@ self.onmessage = function (e) {
         },
         onrender({ panel }) {
           var _a;
-          if (!hasAnswererSource((_a = CommonProject.scripts.settings.cfg.answererWrappers) != null ? _a : [])) {
+          if (!((_a = CommonProject.scripts.settings.cfg.answererWrappers) == null ? void 0 : _a.length)) {
             answerWrapperEmptyWarning(10);
           }
           this.offConfigChange(state$4.study.playbackRateWarningListenerId);
@@ -19536,8 +19108,7 @@ self.onmessage = function (e) {
           ["作业", "/mooc2/work/dowork"]
         ],
         onstart() {
-          // 提前把参考表拉进缓存，答题时不用等；自定义了参考表地址就预热自定义那个
-          loadRefTable(getCryptoTextOption("cryptoTextRefTable", CX_SECRET_REF_TABLE_URL)).catch(() => void 0);
+          loadRefTable(CX_SECRET_REF_TABLE_URL).catch(() => void 0);
         },
         async oncomplete() {
           await ensureCxFontDecrypted();
@@ -19572,6 +19143,47 @@ self.onmessage = function (e) {
         questionPositionSyncHandlerType: "cx"
       });
     }
+    /** 去掉题干开头的题号与题型标记；只清理标记本身，绝不整段删除 */
+    const stripQuestionNumberPrefix = (rootEl) => {
+      const MARKER = /^\s*(?:第\s*)?\d{1,3}\s*[.、．)）](?!\d)\s*/;
+      const TYPE = /^[（(【\[]?\s*(?:单选题|多选题|判断题|填空题|简答题|论述题|名词解释|不定项选择题|不定项|单选|多选|判断|填空|问答|阅读|材料分析)\s*题?\s*(?:[,，]\s*[\d.]+\s*分)?\s*[）)】\]]?\s*/;
+      const NUMBER_ONLY = /^(?:第\s*)?\d{1,3}\s*[.、．)）]?$/;
+      for (let k = 0; k < 2; k++) {
+        const node = rootEl.firstChild;
+        if (!node) break;
+        if (node.nodeType === 3) {
+          const raw = node.textContent || "";
+          let text = raw;
+          for (let n = 0; n < 2; n++) {
+            const before = text;
+            text = text.replace(MARKER, "").replace(TYPE, "");
+            if (text === before) break;
+          }
+          if (text !== raw) {
+            node.textContent = text;
+            if (text.trim()) return;
+            node.remove();
+            continue;
+          }
+          if (!raw.trim()) {
+            node.remove();
+            continue;
+          }
+          return;
+        }
+        const t = (node.textContent || "").trim();
+        if (!t) {
+          node.remove();
+          continue;
+        }
+        const isMarker = NUMBER_ONLY.test(t) || t.replace(TYPE, "").trim() === "";
+        if (isMarker) {
+          node.remove();
+          continue;
+        }
+        return;
+      }
+    };
     const workOrExamQuestionTitleTransform = (titles) => {
       const is_multiple_question = titles.length > 1;
       const images = [];
@@ -19579,11 +19191,7 @@ self.onmessage = function (e) {
         var _a, _b;
         if (el) {
           const titleCloneEl = el.cloneNode(true);
-          const childNodes = titleCloneEl.childNodes;
-          if (i === 0) {
-            (_a = childNodes[0]) == null ? void 0 : _a.remove();
-            (_b = childNodes[0]) == null ? void 0 : _b.remove();
-          }
+          if (i === 0) stripQuestionNumberPrefix(titleCloneEl);
           const extracted = extractTextWithImages(titleCloneEl);
           images.push(...extracted.images);
           return extracted.text;
@@ -19831,272 +19439,47 @@ self.onmessage = function (e) {
     });
     return worker;
   }
-  // ============================================================
-  // 加密文字还原方式
-  //   font = 本地字体特征比对（默认，快、不花钱）
-  //   ai   = 把字形画成编号网格图交给视觉模型读（不依赖 CDN 特征表）
-  //   auto = 先用 font，失败或置信度低时自动转 ai
-  //   off  = 不还原（乱码直接交给题库/AI，用于对照排查）
-  // ============================================================
-  const CRYPTO_TEXT_MODES = ["font", "ai", "auto", "off"];
-  /** 读配置：先看脚本设置对象，再看 GM 存储（服务端写的是存储里的键，页面刚加载时设置对象可能还没初始化） */
-  function readCryptoTextConfig(key) {
-    try {
-      const v = CommonProject.scripts.settings.cfg[key];
-      if (v !== void 0 && v !== null && v !== "") {
-        return v;
-      }
-    } catch (e) {
-    }
-    try {
-      if (typeof window.GM_getValue === "function") {
-        const v2 = window.GM_getValue("common.settings." + key);
-        if (v2 !== void 0 && v2 !== null && v2 !== "") {
-          return v2;
-        }
-      }
-    } catch (e) {
-    }
-    return void 0;
-  }
-  function getCryptoTextMode() {
-    const raw = String(readCryptoTextConfig("cryptoTextMode") || "").trim().toLowerCase();
-    return CRYPTO_TEXT_MODES.includes(raw) ? raw : "font";
-  }
-  /** 加密相关的进度要同时打到原生 console：服务端只转发现有文本日志 */
-  function cryptoLog(text, level) {
-    try {
-      if (level === "error") {
-        $console.error(text);
-        console.error("[加密] " + text);
-      } else if (level === "warn") {
-        $console.warn(text);
-        console.warn("[加密] " + text);
-      } else {
-        $console.info(text);
-        console.log("[加密] " + text);
-      }
-    } catch (e) {
-    }
-  }
-  function getCryptoTextOption(key, fallback) {
-    const v = readCryptoTextConfig(key);
-    return v === void 0 ? fallback : v;
-  }
-  /**
-   * 把字符用「同一个加密字体」画成编号网格图：格子下方是编号，
-   * 视觉模型只要按编号读字即可。图上看到的形状就是加密字体真正渲染出来的汉字。
-   */
-  function renderGlyphSheet(family, chars) {
-    const cell = 96;
-    const cols = 6;
-    const label = 26;
-    const rows = Math.ceil(chars.length / cols);
-    const W = cols * cell;
-    const H = rows * (cell + label);
-    const cv = document.createElement("canvas");
-    cv.width = W;
-    cv.height = H;
-    const ctx = cv.getContext("2d");
-    if (!ctx) {
-      return "";
-    }
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, W, H);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    for (let i = 0; i < chars.length; i++) {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const cx = col * cell + cell / 2;
-      const cy = row * (cell + label) + cell / 2;
-      ctx.strokeStyle = "#e6e6e6";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(col * cell + 0.5, row * (cell + label) + 0.5, cell, cell);
-      ctx.fillStyle = "#111111";
-      ctx.font = `64px "${family}"`;
-      ctx.fillText(chars[i], cx, cy);
-      ctx.fillStyle = "#999999";
-      ctx.font = "15px sans-serif";
-      ctx.fillText(String(i + 1), cx, cy + cell / 2 + 12);
-    }
-    return cv.toDataURL("image/png");
-  }
-  /** 通过 GM 桥接把图送到 node 侧，由服务端调视觉模型（走桥接不受混合内容/CORS 限制） */
-  function callOcrBridge(payload) {
-    return new Promise((resolve) => {
-      try {
-        if (typeof window.gmBridge !== "function") {
-          resolve({ ok: false, error: "桥接不可用" });
-          return;
-        }
-        Promise.resolve(window.gmBridge("ocr", payload)).then(
-          (r) => resolve(r || { ok: false, error: "空响应" }),
-          (e) => resolve({ ok: false, error: String(e) })
-        );
-      } catch (e) {
-        resolve({ ok: false, error: String(e) });
-      }
-    });
-  }
-  /** AI 视觉识别：分批送图，返回和 crackFont 一致的 { map } */
-  async function aiCrackFont(fontSource, chars, options) {
-    const opts = options || {};
-    const batchSize = Math.min(60, Math.max(6, Number(opts.batch) || 24));
-    const family = "font-ai-" + Math.random().toString(36).slice(2);
-    const source = typeof fontSource === "string" ? `url("${fontSource}")` : fontSource;
-    const face = new FontFace(family, source, opts.fontWeight ? { weight: opts.fontWeight } : {});
-    await Promise.race([
-      face.load(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("[font-decrypt] 字体加载超时")), 15e3))
-    ]);
-    document.fonts.add(face);
-
-    const uniq = [...new Set(chars)].filter((c) => c.trim() !== "");
-    let need = uniq.filter((ch) => isCoveredByFont(family, ch));
-    // 字体没生效时 isCoveredByFont 会把所有字符都判成“不覆盖”，这时按全部识别处理
-    if (need.length === 0) {
-      need = uniq.slice();
-    }
-    const map = {};
-    uniq.forEach((ch) => {
-      if (!need.includes(ch)) {
-        map[ch] = ch;
-      }
-    });
-
-    const total = need.length;
-    for (let i = 0; i < total; i += batchSize) {
-      const batch = need.slice(i, i + batchSize);
-      const image = renderGlyphSheet(family, batch);
-      if (!image) {
-        throw new Error("canvas 不可用");
-      }
-      const r = await callOcrBridge({ image, count: batch.length, offset: i });
-      if (!r || !r.ok) {
-        throw new Error((r && r.error) || "识别失败");
-      }
-      for (let k = 0; k < batch.length; k++) {
-        const got = r.map ? (r.map[k + 1] !== void 0 ? r.map[k + 1] : r.map[String(k + 1)]) : "";
-        map[batch[k]] = got && got !== "?" ? got : batch[k];
-      }
-      if (typeof opts.onProgress === "function") {
-        opts.onProgress(Math.min(i + batchSize, total), total);
-      }
-    }
-    return { map };
-  }
   let cxFontMap;
   let cxFontCrackJob;
   let cxFontCrackFailed = false;
   function crackCxFontOnce(doc) {
     if (!cxFontCrackJob) {
       cxFontCrackJob = (async () => {
-        const mode = getCryptoTextMode();
-        if (mode === "off") {
-          cryptoLog("已按配置关闭加密文字识别（模式：off），题干可能仍是乱码");
-          cxFontCrackJob = void 0;
-          return void 0;
-        }
         const fontBuffer = extractFontFromStyle(doc, "font-cxsecret");
         if (!fontBuffer) {
-          cryptoLog("未检测到加密文字。");
+          $console.log("未检测到加密文字。");
           return void 0;
         }
         const fonts = CXAnalyses.getSecretFont(doc);
         if (fonts.length === 0) {
           return void 0;
         }
-        const chars = collectChars(fonts);
         const t2 = Date.now();
-        const refTableUrl = getCryptoTextOption("cryptoTextRefTable", CX_SECRET_REF_TABLE_URL);
-        const batch = Number(getCryptoTextOption("cryptoTextBatch", 24)) || 24;
-        const uniqCount = new Set([...chars].filter((c) => c.trim() !== "")).size;
-        let map = null;
-        let details = [];
-        let via = "";
-        const runAi = async (chars2, label) => {
-          cryptoLog(`加密文字：${label}（${new Set([...chars2].filter((c) => c.trim() !== "")).size} 个不同字符）`);
-          const r = await aiCrackFont(fontBuffer, chars2, {
-            batch,
-            onProgress: (done, total) => console.log(`AI 识别加密文字 ${done}/${total}`)
+        try {
+          const { map, details } = await crackFont(fontBuffer, collectChars(fonts), {
+            refTableUrl: CX_SECRET_REF_TABLE_URL,
+            onProgress: (done, total) => console.log(`加密文字识别中 ${done}/${total}`)
           });
-          return r.map;
-        };
-        if (mode === "ai") {
-          try {
-            map = await runAi(chars, "使用 AI 视觉识别");
-            via = "AI 视觉";
-          } catch (err) {
-            cryptoLog("AI 识别加密文字失败：" + String(err), "error");
+          const lowMargin = details.filter((d) => d.margin < 0.3);
+          if (lowMargin.length > 0) {
+            const msg = `有 ${lowMargin.length} 个字符识别置信度较低，可能存在误差`;
+            $console.warn(msg);
+            console.log(msg, lowMargin);
           }
-        } else {
-          try {
-            const r = await crackFont(fontBuffer, chars, {
-              refTableUrl,
-              onProgress: (done, total) => console.log(`加密文字识别中 ${done}/${total}`)
-            });
-            map = r.map;
-            details = r.details || [];
-            via = "字体特征";
-            const lowMargin = details.filter((d) => d.margin < 0.3);
-            if (lowMargin.length > 0) {
-              cryptoLog(`有 ${lowMargin.length} 个字符识别置信度较低，可能存在误差`, "warn");
-            }
-          } catch (err) {
-            cryptoLog("加密文字识别失败：" + String(err), "error");
-            if (mode === "auto") {
-              try {
-                map = await runAi(chars, "字体特征不可用，自动改用 AI 视觉");
-                via = "AI 视觉（自动回退）";
-              } catch (err2) {
-                cryptoLog("AI 识别加密文字也失败：" + String(err2), "error");
-              }
-            }
-          }
-        }
-        if (!map) {
+          $console.info("文字解密完成，耗时 " + ((Date.now() - t2) / 1e3).toFixed(1) + " 秒");
+          return map;
+        } catch (err) {
           cxFontCrackFailed = true;
-          lib.$message.error("加密文字识别失败：字体特征与 AI 视觉都不可用，请检查设置或网络");
+          $console.error("加密文字识别失败：", String(err));
+          lib.$message.error("加密文字识别失败：" + String(err));
           return void 0;
         }
-        // auto：字体特征置信度低的字，再用 AI 复核一遍（只补不确定的那些，省 token）
-        if (mode === "auto" && via === "字体特征") {
-          const low = details.filter((d) => d.margin < 0.35);
-          const ratio = details.length ? low.length / details.length : 0;
-          if (low.length > 0) {
-            try {
-              if (ratio >= 0.6) {
-                // 大半都认不准，说明这套字体和参考表不是一路，逐字复核不如整段重来
-                map = await runAi(chars, `字体识别置信度偏低（${low.length}/${details.length}），整段改用 AI 视觉`);
-                via = "AI 视觉（置信度低）";
-              } else {
-                const fix = await runAi(low.map((d) => d.from).join(""), `有 ${low.length} 个字置信度低，交给 AI 复核`);
-                Object.assign(map, fix);
-                via += " + AI 复核";
-              }
-            } catch (e2) {
-              cryptoLog("AI 复核失败，保留字体识别结果：" + String(e2), "warn");
-            }
-          }
-        }
-        cryptoLog(`加密文字识别完成（${via}，${uniqCount} 字），耗时 ${((Date.now() - t2) / 1e3).toFixed(1)} 秒`);
-        return map;
       })();
     }
     return cxFontCrackJob;
   }
-  let cxFontOffNotified = false;
   async function ensureCxFontDecrypted(doc = document) {
     if (cxFontCrackFailed) {
-      return;
-    }
-    if (getCryptoTextMode() === "off") {
-      // 只提示一次，否则每道题都会刷一行
-      if (!cxFontOffNotified) {
-        cxFontOffNotified = true;
-        cryptoLog("已按配置关闭加密文字识别（模式：off），题干可能仍是乱码");
-      }
       return;
     }
     const fonts = CXAnalyses.getSecretFont(doc);
@@ -21054,7 +20437,7 @@ self.onmessage = function (e) {
           ["课程列表", "icve.com.cn/study/directory/directory_list.html"]
         ],
         configs: {
-          playbackRate: playbackRate$1,
+          playbackRate: playbackRate$2,
           volume,
           currentCourseUrlList: {
             defaultValue: []
@@ -21165,7 +20548,7 @@ self.onmessage = function (e) {
               "手动进入作业页面才能使用自动答题。"
             ]).outerHTML
           },
-          playbackRate: playbackRate$1,
+          playbackRate: playbackRate$2,
           volume,
           restudy,
           showScrollBar: {
@@ -21336,7 +20719,7 @@ self.onmessage = function (e) {
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "自动答题前请在 “通用-全局设置” 中设置题库配置，或配置「AI 答题」使用大模型答题。",
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
               "可以搭配 “通用-在线搜题” 一起使用。",
               "请手动进入作业考试页面才能使用自动答题。"
             ]).outerHTML
@@ -21605,7 +20988,7 @@ self.onmessage = function (e) {
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "自动答题前请在 “通用-全局设置” 中设置题库配置，或配置「AI 答题」使用大模型答题。",
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
               "可以搭配 “通用-在线搜题” 一起使用。",
               "请手动进入作业考试页面才能使用自动答题。",
               "自动答题时请勿切换题目，否则可能导致重复搜题或者脚本卡主！"
@@ -22185,7 +21568,7 @@ self.onmessage = function (e) {
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "自动答题前请在 “通用-全局设置” 中设置题库配置，或配置「AI 答题」使用大模型答题。",
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
               "可以搭配 “通用-在线搜题” 一起使用。",
               "请手动进入作业考试页面才能使用自动答题。"
             ]).outerHTML
@@ -22504,6 +21887,59 @@ self.onmessage = function (e) {
     });
     return worker;
   }
+  const studyNotes = {
+    defaultValue: lib.$ui.notes([
+      "请勿在使用过程中最小化浏览器",
+      "自动讨论默认关闭，如需开启请在下方设置中设置",
+      "作业请完成课程后手动进入"
+    ]).outerHTML
+  };
+  const readSpeed = {
+    label: "PPT翻阅速度（秒）",
+    attrs: { type: "number", step: "1", min: "1", max: "10" },
+    defaultValue: 1
+  };
+  const playbackRate = {
+    label: "视频倍速",
+    tag: "select",
+    defaultValue: 1,
+    options: [
+      ["1", "1 x"],
+      ["1.25", "1.25 x"],
+      ["1.5", "1.5 x"]
+    ]
+  };
+  const discussionStrategy = {
+    label: "讨论自动回复方式",
+    tag: "select",
+    attrs: {
+      title: "在课程讨论任务点中自动回复评论的方式，默认为不回复，如需自动回复请手动选择。"
+    },
+    defaultValue: "not-reply",
+    options: [
+      ["not-reply", "不讨论回复"],
+      ["random", "随机抽取评论区的内容进行回复"],
+      ["max-show-up", "获取出现最多的评论进行回复"],
+      ["max-fav", "获取最多点赞的评论进行回复"],
+      ["use-newest", "获取最新的评论进行回复"]
+    ]
+  };
+  const enableChapterTest = {
+    label: "随堂测验自动答题",
+    attrs: {
+      type: "checkbox",
+      title: "是否开启随堂测验自动答题，默认关闭，测试时只需点击即可完成测验，但这里保留选项防止需要开启。"
+    },
+    defaultValue: false
+  };
+  const icourseStudyCenterConfigs = {
+    notes: studyNotes,
+    playbackRate,
+    volume,
+    readSpeed,
+    discussionStrategy,
+    enableChapterTest
+  };
   const $msg_and_log = (type, msg) => {
     lib.$message[type](msg);
     $console[type](msg);
@@ -22527,7 +21963,7 @@ self.onmessage = function (e) {
             return;
           }
           setInterval(() => {
-            var _a, _b;
+            var _a, _b, _c;
             const hash = new URL(window.location.href).hash;
             if (state$1.currentUrlHash !== hash) {
               state$1.currentRunningScriptName = "";
@@ -22536,12 +21972,15 @@ self.onmessage = function (e) {
             for (const key in ICourseProject.scripts) {
               if (Object.prototype.hasOwnProperty.call(ICourseProject.scripts, key)) {
                 const script2 = ICourseProject.scripts[key];
+                if (typeof ((_a = script2.methods) == null ? void 0 : _a.main) !== "function") {
+                  continue;
+                }
                 const runAtHash = Array.isArray(script2.cfg.runAtHash) ? script2.cfg.runAtHash : [script2.cfg.runAtHash];
                 if (runAtHash.length && runAtHash.some((h2) => state$1.currentUrlHash.includes(h2))) {
                   if (state$1.currentRunningScriptName !== script2.name) {
                     state$1.currentRunningScriptName = script2.name;
                     state$1.current_job_id = Math.random().toString(16).slice(2);
-                    (_b = (_a = script2.methods) == null ? void 0 : _a.main) == null ? void 0 : _b.call(_a, {
+                    (_c = (_b = script2.methods) == null ? void 0 : _b.main) == null ? void 0 : _c.call(_b, {
                       canRun: () => {
                         return state$1.currentUrlHash && runAtHash.some((h2) => state$1.currentUrlHash.includes(h2));
                       },
@@ -22576,52 +22015,40 @@ self.onmessage = function (e) {
           };
         }
       }),
+      "study-center": new lib.Script({
+        name: "🖥️ 学习设置",
+        matches: [
+          ["MOOC学习页面", "icourse163.org/learn"],
+          ["SPOC学习页面", "icourse163.org/spoc/learn"],
+          ["新智慧慕课学习页面", "/mooc/learn"]
+        ],
+        namespace: icourseStudyNamespace,
+        configs: icourseStudyCenterConfigs,
+        oncomplete() {
+          migrateIcourseStudyConfigs();
+          BackgroundProject.scripts.render.methods.pin(this);
+        }
+      }),
       study: new lib.Script({
         name: "🖥️ 学习脚本",
-        namespace: "icourse.study-v1",
+        hideInPanel: true,
+        namespace: icourseStudyNamespace,
         matches: [
           ["MOOC作业页面", "icourse163.org/learn"],
           ["SPOC作业页面", "icourse163.org/spoc/learn"]
         ],
         configs: {
-          notes: {
-            defaultValue: lib.$ui.notes([
-              "请勿在使用过程中最小化浏览器",
-              "自动讨论默认关闭，如需开启请在下方设置中设置",
-              "作业请完成课程后手动进入"
-            ]).outerHTML
-          },
           runAtHash: {
             defaultValue: "/learn/content?type=detail"
           },
-          playbackRate: playbackRate$1,
+          playbackRate: playbackRate$2,
           volume,
-          readSpeed: {
-            label: "PPT翻阅速度（秒）",
-            attrs: { type: "number", step: "1", min: "1", max: "10" },
-            defaultValue: 1
-          },
-          discussionStrategy: {
-            label: "讨论自动回复方式",
-            tag: "select",
-            defaultValue: "not-reply",
-            options: [
-              ["not-reply", "不讨论回复"],
-              ["max-show-up", "获取出现最多的评论进行回复"],
-              ["max-fav", "获取最多点赞的评论进行回复"],
-              ["use-newest", "获取最新的评论进行回复"]
-            ]
-          },
-          enableChapterTest: {
-            label: "随堂测验自动答题",
-            attrs: {
-              type: "checkbox",
-              title: "是否开启随堂测验自动答题，默认关闭，测试时只需点击即可完成测验，但这里保留选项防止需要开启。"
-            },
-            defaultValue: false
-          }
+          readSpeed,
+          discussionStrategy,
+          enableChapterTest
         },
         oncomplete() {
+          migrateIcourseStudyConfigs();
           this.onConfigChange("playbackRate", (playbackRate2) => {
             state$1.currentMedia && (state$1.currentMedia.playbackRate = parseFloat(playbackRate2.toString()));
           });
@@ -22806,48 +22233,24 @@ self.onmessage = function (e) {
       }),
       study_v2: new lib.Script({
         name: "🖥️ 智慧慕课",
+        hideInPanel: true,
         matches: [["新智慧慕课", "/mooc/learn"]],
-        namespace: "icourse.study-v2",
+        namespace: icourseStudyNamespace,
         configs: {
-          notes: {
-            defaultValue: lib.$ui.notes([
-              "请勿在使用过程中最小化浏览器",
-              "自动讨论默认关闭，如需开启请在下方设置中设置",
-              "作业请完成课程后手动进入"
-            ]).outerHTML
-          },
-          playbackRate: playbackRate$1,
+          playbackRate: playbackRate$2,
           volume,
-          readSpeed: {
-            label: "PPT翻阅速度（秒）",
-            attrs: { type: "number", step: "1", min: "1", max: "10" },
-            defaultValue: 1
-          },
-          discussionStrategy: {
-            label: "讨论自动回复方式",
-            tag: "select",
-            defaultValue: "random",
-            options: [
-              ["not-reply", "不讨论回复"],
-              ["random", "随机抽取评论区的内容进行回复"],
-              ["max-show-up", "获取出现最多的评论进行回复"],
-              ["max-fav", "获取最多点赞的评论进行回复"],
-              ["use-newest", "获取最新的评论进行回复"]
-            ]
-          },
-          enableChapterTest: {
-            label: "随堂测验自动答题",
-            attrs: {
-              type: "checkbox",
-              title: "是否开启随堂测验自动答题，默认关闭，测试时只需点击即可完成测验，但这里保留选项防止需要开启。"
-            },
-            defaultValue: false
-          }
+          readSpeed,
+          discussionStrategy,
+          enableChapterTest
         },
         methods() {
           return {
             waitForV2PageLoaded: () => waitForElement('[data-page-state="loaded"]'),
             main: async () => {
+              this.onConfigChange("playbackRate", (playbackRate2) => {
+                state$1.currentMedia && (state$1.currentMedia.playbackRate = parseFloat(playbackRate2.toString()));
+              });
+              this.onConfigChange("volume", (v) => state$1.currentMedia && (state$1.currentMedia.volume = v));
               const section = await waitForElement(".learn-courseware-panel");
               const canRun = () => section == null ? void 0 : section.isConnected;
               lib.$message.info("正在自动学习中...");
@@ -23001,6 +22404,7 @@ self.onmessage = function (e) {
           }
         },
         async oncomplete() {
+          migrateIcourseStudyConfigs();
           await this.methods.waitForV2PageLoaded();
           if (document.querySelector('[class="course-content-card"]')) {
             return lib.$message.info({ content: "请手动进入视频、作业页面，脚本会自动运行。", duration: 10 });
@@ -23021,7 +22425,7 @@ self.onmessage = function (e) {
         configs: {
           notes: {
             defaultValue: lib.$ui.notes([
-              "自动答题前请在 “通用-全局设置” 中设置题库配置，或配置「AI 答题」使用大模型答题。",
+              "自动答题前请在 “通用-全局设置” 中设置题库配置。",
               "⚠️禁止同时开多个作业/考试页面。",
               [
                 "⚠️由于MOOC限制、答题速度和搜题速度将默认调慢",
@@ -23370,7 +22774,7 @@ self.onmessage = function (e) {
       }).catch(reject);
     });
   }
-  async function readPPT(remotePage, readSpeed) {
+  async function readPPT(remotePage, readSpeed2) {
     var _a, _b, _c, _d;
     const reader = document.querySelector(".ux-pdf-reader");
     if (reader) {
@@ -23388,11 +22792,11 @@ self.onmessage = function (e) {
           $msg_and_log("error", "未找到PPT的下一页按钮！");
           return;
         }
-        await $.sleep(readSpeed * 1e3);
+        await $.sleep(readSpeed2 * 1e3);
       }
     }
   }
-  async function readPPT_v2(remotePage, readSpeed) {
+  async function readPPT_v2(remotePage, readSpeed2) {
     var _a, _b;
     const reader = document.querySelector(".pdf-unit-renderer");
     if (reader) {
@@ -23405,17 +22809,17 @@ self.onmessage = function (e) {
           $msg_and_log("error", "未找到PPT的下一页按钮！");
           return;
         }
-        await $.sleep(readSpeed * 1e3);
+        await $.sleep(readSpeed2 * 1e3);
       }
     }
   }
-  async function discussion(remotePage, discussionStrategy) {
-    var _a, _b, _c, _d, _e;
-    if (discussionStrategy === "not-reply") {
+  async function discussion(remotePage, discussionStrategy2) {
+    var _a, _b, _c, _d, _e, _f;
+    if (discussionStrategy2 === "not-reply") {
       return $msg_and_log("warn", "讨论自动回复功能已关闭（上方菜单栏-中国大学MOOC-学习脚本中开启）。");
     }
     let res = "";
-    if (discussionStrategy === "max-show-up") {
+    if (discussionStrategy2 === "max-show-up") {
       const list = Array.from(document.querySelectorAll(".j-reply-all .f-pr .j-content"));
       const mapping = /* @__PURE__ */ new Map();
       for (const item of list) {
@@ -23426,7 +22830,7 @@ self.onmessage = function (e) {
         $msg_and_log("error", "读取出现最多评论失败！");
       }
       res = content;
-    } else if (discussionStrategy === "max-fav") {
+    } else if (discussionStrategy2 === "max-fav") {
       const list = Array.from(document.querySelectorAll(".j-reply-all .f-pr"));
       let max = 0;
       let maxEl = list[0];
@@ -23442,8 +22846,15 @@ self.onmessage = function (e) {
         $msg_and_log("error", "读取最多点赞评论失败！");
       }
       res = content;
-    } else if (discussionStrategy === "use-newest") {
-      const content = ((_e = document.querySelector(".j-reply-all .f-pr .first .j-content")) == null ? void 0 : _e.textContent) || "";
+    } else if (discussionStrategy2 === "random") {
+      const list = Array.from(document.querySelectorAll(".j-reply-all .f-pr .j-content"));
+      const content = ((_e = list[Math.floor(Math.random() * list.length)]) == null ? void 0 : _e.textContent) || "";
+      if (!content) {
+        $msg_and_log("error", "读取随机评论失败！");
+      }
+      res = content;
+    } else if (discussionStrategy2 === "use-newest") {
+      const content = ((_f = document.querySelector(".j-reply-all .f-pr .first .j-content")) == null ? void 0 : _f.textContent) || "";
       if (!content) {
         $msg_and_log("error", "读取最新评论失败！");
       }
@@ -23465,14 +22876,14 @@ self.onmessage = function (e) {
       $msg_and_log("error", "获取评论输入框失败！");
     }
   }
-  async function discussion_v2(remotePage, discussionStrategy) {
+  async function discussion_v2(remotePage, discussionStrategy2) {
     var _a, _b, _c, _d;
-    if (discussionStrategy === "not-reply") {
+    if (discussionStrategy2 === "not-reply") {
       return $msg_and_log("warn", "讨论自动回复功能已关闭（上方菜单栏-中国大学MOOC-学习脚本中开启）。");
     }
     let res = "";
     const text_list = Array.from(document.querySelectorAll("article.soft-shell.p-5 > p"));
-    if (discussionStrategy === "max-show-up") {
+    if (discussionStrategy2 === "max-show-up") {
       const mapping = /* @__PURE__ */ new Map();
       for (const item of text_list) {
         mapping.set(item.textContent, (mapping.get(item.textContent) || 0) + 1);
@@ -23482,7 +22893,7 @@ self.onmessage = function (e) {
         $msg_and_log("error", "读取出现最多评论失败！");
       }
       res = content;
-    } else if (discussionStrategy === "max-fav") {
+    } else if (discussionStrategy2 === "max-fav") {
       const discussion_list = Array.from(document.querySelectorAll("article.soft-shell"));
       let max = 0;
       let maxEl = discussion_list[0];
@@ -23498,13 +22909,13 @@ self.onmessage = function (e) {
         $msg_and_log("error", "读取最多点赞评论失败！");
       }
       res = content;
-    } else if (discussionStrategy === "random") {
+    } else if (discussionStrategy2 === "random") {
       const content = text_list[Math.floor(Math.random() * text_list.length)].textContent || "";
       if (!content) {
         $msg_and_log("error", "读取随机评论失败！");
       }
       res = content;
-    } else if (discussionStrategy === "use-newest") {
+    } else if (discussionStrategy2 === "use-newest") {
       const content = text_list[0].textContent || "";
       if (!content) {
         $msg_and_log("error", "读取最新评论失败！");
@@ -23550,7 +22961,11 @@ self.onmessage = function (e) {
   };
   const YKTProject = lib.Project.create({
     name: "雨课堂",
-    domains: ["yuketang.cn", "gdufemooc.cn"],
+    domains: [
+      "yuketang.cn",
+      "xuetangx.com",
+      "gdufemooc.cn"
+    ],
     scripts: {
       guide: new lib.Script({
         name: "💡 使用提示",
@@ -23803,6 +23218,27 @@ self.onmessage = function (e) {
             study2();
           };
           study2();
+        }
+      }),
+      exam: new lib.Script({
+        name: "自动考试",
+        matches: [["考试界面", "examination.xuetangx.com/exam/"]],
+        namespace: "yuketang.study.exam",
+        configs: {
+          notes: workNotes$1
+        },
+        async onhistorychanged(type, ...args) {
+          if (type !== "pushed")
+            return;
+          await waitForElement(".exam-main--content .subject-item");
+          commonWork({
+            mount_script: this,
+            workerProvider: (opts) => examination(opts)
+          });
+        },
+        async oncomplete() {
+          var _a;
+          (_a = this.onhistorychanged) == null ? void 0 : _a.call(this, "pushed");
         }
       })
     }
@@ -24491,6 +23927,105 @@ self.onmessage = function (e) {
         resolve();
       };
     });
+  }
+  function examination(opts) {
+    var _a;
+    lib.$message.info(`开始考试`);
+    CommonProject.scripts.workResults.methods.init();
+    const redundanceWords = opts.redundanceWordsText.split("\n").filter(Boolean);
+    const titleTransform = (titles) => titles.filter((t2) => t2 == null ? void 0 : t2.innerText).map(
+      (t2) => t2 ? removeRedundantWords(
+        StringUtils.of(extractYktTitleText(t2)).nowrap(" ").nospace().toString().trim(),
+        redundanceWords
+      ) : ""
+    ).join(",");
+    const worker = new OCSWorker({
+      root: ".exam-main--content .subject-item",
+      elements: {
+        title: ".clearfix.exam-font .custom_ueditor_cn_body",
+        options: "ul.list-unstyled li .custom_ueditor_cn_body",
+        textareas: (root2) => {
+          const editors = lib.$$el('iframe[id^="ueditor_"]', root2);
+          if (editors.length) {
+            return editors;
+          }
+          const blanks = lib.$$el(YKT_BLANK_INPUT_SELECTOR, root2);
+          return blanks.length ? blanks : lib.$$el("textarea", root2);
+        }
+      },
+      thread: (_a = opts.thread) != null ? _a : 1,
+      answerSeparators: opts.answerSeparators.split(",").map((s) => s.trim()),
+      answerer: createCommonAnswerer({
+        titleTransform: (elements2, ctx) => {
+          if (elements2.title) {
+            return titleTransform(elements2.title);
+          }
+          return "";
+        },
+        answererWrappers: opts.answererWrappers,
+        period: opts.period
+      }),
+      work: async (ctx) => {
+        var _a2;
+        const { elements: elements2, searchInfos } = ctx;
+        const type = (() => {
+          var _a3, _b, _c;
+          const cl = ((_c = (_b = (_a3 = ctx == null ? void 0 : ctx.root) == null ? void 0 : _a3.querySelector(".item-type")) == null ? void 0 : _b.textContent) == null ? void 0 : _c.trim()) || "";
+          return cl.includes("单选题") ? "single" : cl.includes("多选题") ? "multiple" : cl.includes("判断题") ? "judgement" : cl.includes("填空题") ? "completion" : void 0;
+        })();
+        if (type && (type === "multiple" || type === "single")) {
+          const resolver = createDefaultQuestionResolver(ctx, (o) => extractTextWithImages(o).text)[type];
+          return await resolver(searchInfos, elements2.options, async (type2, answer, option) => {
+            if (!(option == null ? void 0 : option.querySelector(".el-icon-check"))) {
+              option.click();
+              await lib.$.sleep(500);
+            }
+          });
+        } else if (type && type === "judgement") {
+          const answersGroup = searchInfos.map((info) => info.results.map((res) => res.answer));
+          const optionTexts = ["对", "错"];
+          const result = resolveJudgement(answersGroup, optionTexts);
+          if (result.finish && result.option) {
+            const index = optionTexts.indexOf(result.option);
+            (_a2 = ctx.elements.options[index]) == null ? void 0 : _a2.click();
+            return { finish: true };
+          }
+          return { finish: false };
+        } else if (type === "completion") {
+          const resolver = createDefaultQuestionResolver(ctx, (o) => extractTextWithImages(o).text).completion;
+          return await resolver(searchInfos, elements2.textareas, async (type2, answer, option) => {
+            if ((option == null ? void 0 : option.tagName) === "IFRAME") {
+              fillYktUEditor(option, answer);
+              await lib.$.sleep(300);
+            } else {
+              const input = (option == null ? void 0 : option.tagName) === "TEXTAREA" || (option == null ? void 0 : option.tagName) === "INPUT" ? option : option == null ? void 0 : option.querySelector("textarea,input");
+              if (input) {
+                input.value = answer;
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                await lib.$.sleep(200);
+              }
+            }
+          });
+        }
+        return { finish: false };
+      },
+      async onResultsInit(_curr, _index, res) {
+        await CommonProject.scripts.workResults.methods.fillAll(
+          res.map((r, i) => simplifyWorkResult(r, titleTransform, i))
+        );
+      },
+      async onResultsUpdate(current, index, res) {
+        await CommonProject.scripts.workResults.methods.update(index, simplifyWorkResult(current, titleTransform, index));
+      }
+    });
+    worker.doWork({ enable_debug: BackgroundProject.scripts.dev.cfg.enable_answerer_debug }).then(() => {
+      lib.$message.info({ content: "随堂练习完成，请自行检查后保存或提交。", duration: 0 });
+      worker.emit("done");
+    }).catch((err) => {
+      console.error(err);
+      lib.$message.error("答题程序发生错误 : " + err.message);
+    });
+    return worker;
   }
   function definedProjects() {
     return [
@@ -26802,7 +26337,7 @@ modal-element .modal-cancel-button:hover {
 }
 `;
 
-/* eslint-disable no-undef */
+/* eslint-disable no-undef, max-len */
 /// <reference path="./global.d.ts" />
 
 // 环境检测
@@ -26844,16 +26379,14 @@ const infos = GM_info;
 
 	// 运行脚本
 	start({
+		OCS_TYPE: 'main',
 		projects: projects,
 		renderConfig: {
 			renderScript: RenderScript,
 			styles: [STYLE],
 			defaultPanelName: CommonProject.scripts.guide.namespace,
-			title: `${logoSvg} OCS 全域名通用版 <span style="font-size: 12px; color: #969696;">v${infos.script.version}</span>`
+			title: `${logoSvg} OCS <span style="font-size: 12px; color: #969696;">v${infos.script.version}</span>`
 		},
-		updatePage:
-			GM_info.scriptHandler === 'Tampermonkey'
-				? 'https://greasyfork.org/zh-CN/scripts/481438'
-				: 'https://scriptcat.org/zh-CN/script-show-page/1398'
+		updatePage: 'https://docs.ocsjs.com/docs/update'
 	});
 })();
