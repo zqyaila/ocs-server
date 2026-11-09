@@ -236,7 +236,9 @@ class TaskRunner extends EventEmitter {
       if (now - (frameAppliedAt.get(frame) || 0) < 3000) return;
       frameAppliedAt.set(frame, now);
       setTimeout(() => {
-        this.applyFrameConfigWhenReady(frame, this.config.data).catch(() => {});
+        // 必须用「按用户解析后」的配置：这里以前传的是全局 config.data，
+        // iframe 一导航就把这个账号的独立 AI 覆盖回全局了
+        this.applyFrameConfigWhenReady(frame, this.resolvedConfig()).catch(() => {});
       }, 1200).unref();
     });
   }
@@ -401,9 +403,23 @@ class TaskRunner extends EventEmitter {
     return ok ? this.tabs() : null;
   }
 
+  /**
+   * 「这个用户实际生效」的配置：AI 段按用户覆盖，其余沿用全局。
+   *
+   * 以前这里直接用 this.config.data：全局 AI 会盖掉用户的独立接口。
+   * 只要页面里任何一个 iframe 导航一次，iframe 就会被灌回全局配置，
+   * 而 cfg 的写入会回写 GM 存储并广播到所有 frame —— 表现就是
+   * 「单独配了 AI，跑一会儿又变回全局 / 干脆不答题了」。
+   */
+  resolvedConfig() {
+    return Object.assign({}, this.config.data, {
+      ai: resolveAi(this.config.data.ai, this.host.user)
+    });
+  }
+
   /** 把服务端配置写进页面里的 OCS（所有 frame，含 iframe） */
   async applyConfig(task, targetPage) {
-    const cfg = this.config.data;
+    const cfg = this.resolvedConfig();
     let last = null;
     for (const frame of targetPage.frames()) {
       const r = await this.applyConfigToFrame(frame, cfg).catch(() => null);
@@ -420,9 +436,7 @@ class TaskRunner extends EventEmitter {
   async applyConfigWithRetry(targetPage, timeoutMs = 15000) {
     if (!targetPage || targetPage.isClosed()) return null;
     // AI 段按用户解析：这个人可能配了别的服务商/Key，不能把全局那份直接塞给他
-    const cfg = Object.assign({}, this.config.data, {
-      ai: resolveAi(this.config.data.ai, this.host.user)
-    });
+    const cfg = this.resolvedConfig();
     const ready = new WeakSet();
     const start = Date.now();
     let last = null;
