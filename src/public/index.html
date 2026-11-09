@@ -746,8 +746,8 @@
         </div>
       </div>
       <div class="field">
-        <label>题库配置（JSON 数组，可留空）</label>
-        <textarea id="wrappers" rows="5" placeholder='[{"name":"题库A","url":"https://...","method":"post","type":"GM_xmlhttpRequest","contentType":"json","data":{"title":"${title}"},"handler":"return (res)=>[res.answer]"}]'></textarea>
+        <label>答题方式</label>
+        <div class="hint" style="margin-top:5px">本版本只使用「AI 答题」，题库已移除，无需再填题库 JSON。</div>
       </div>
 
       <div class="divider"></div>
@@ -1668,7 +1668,6 @@ function fillConfig() {
   el('resumeSession').checked = !(c.server && c.server.resumeSession === false);
   el('browserSize').value = (c.browser.width || 1280) + 'x' + (c.browser.height || 800);
   el('browserDpr').value = String(c.browser.deviceScaleFactor || 1);
-  el('wrappers').value = JSON.stringify(c.answererWrappers || [], null, 2);
 
   const mem = c.browser.memory || {};
   el('memTune').checked = mem.tune !== false;
@@ -1729,8 +1728,6 @@ el('btnTestAi').onclick = async () => {
 };
 
 el('btnSave').onclick = async () => {
-  let wrappers = [];
-  try { wrappers = JSON.parse(el('wrappers').value || '[]'); } catch (e) { wrappers = []; }
   const patch = {
     ai: {
       enabled: el('aiEnabled').checked,
@@ -1773,8 +1770,7 @@ el('btnSave').onclick = async () => {
       autoStart: el('autoStart').checked,
       cryptoText: { mode: el('cryptoTextMode').value || 'font' }
     },
-    server: { autoRun: el('autoRun').checked, resumeSession: el('resumeSession').checked },
-    answererWrappers: wrappers
+    server: { autoRun: el('autoRun').checked, resumeSession: el('resumeSession').checked }
   };
   try {
     await api('/api/config', { method: 'PUT', body: JSON.stringify(patch) });

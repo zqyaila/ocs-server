@@ -83,7 +83,6 @@ const DEFAULTS = {
     systemPrompt: '',
     extraPrompt: ''
   },
-  answererWrappers: [],
   // 上次关闭时的现场：谁被选中、停在哪个地址、当时是在跑还是停着。
   // 服务启动时按这个恢复，前端也用 lastUserId 选中同一个人。
   session: {
@@ -144,6 +143,12 @@ class Config {
     try {
       const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
       merged = merge(DEFAULTS, raw);
+      // 题库已经彻底移除：把旧配置里的 answererWrappers 直接删掉，
+      // 否则它会被 merge 原样留在 config.json 里，看着像还能用
+      if ('answererWrappers' in merged) {
+        delete merged.answererWrappers;
+        dirty = true;
+      }
       // 旧版本默认「单任务最长 360 分钟」，现改为不限。只在配置文件里还是这个旧默认值时迁移
       if (raw.ocs && Number(raw.ocs.maxDurationMinutes) === 360) {
         merged.ocs.maxDurationMinutes = 0;

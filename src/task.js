@@ -228,7 +228,7 @@ class TaskRunner extends EventEmitter {
     });
 
     // 子 frame 每次导航都重灌配置。用 WeakMap 记录时间，避免 iframe 频繁跳转时
-    // 每 1.2 秒就 evaluate 一次整份配置（题库大的时候这会产生大量临时对象）
+    // 每 1.2 秒就 evaluate 一次整份配置
     const frameAppliedAt = new WeakMap();
     page.on('framenavigated', (frame) => {
       if (frame === page.mainFrame()) return;
@@ -317,7 +317,7 @@ class TaskRunner extends EventEmitter {
       }
       this.emit('change');
 
-      // 新页面里的 OCS 是全新的一份，AI / 题库配置得重新写进去
+      // 新页面里的 OCS 是全新的一份，AI 配置得重新写进去
       if (task) {
         this.applyConfigWithRetry(page, 10000)
           .then((r) => {
@@ -325,7 +325,7 @@ class TaskRunner extends EventEmitter {
             this.addLog(
               task,
               'info',
-              `新标签页配置已生效：AI ${r.aiEnabled ? '已启用(' + r.model + ')' : '未启用'}，题库 ${r.wrappers} 个`
+              `新标签页配置已生效：AI ${r.aiEnabled ? '已启用(' + r.model + ')' : '未启用'}`
             );
           })
           .catch(() => {});
@@ -465,7 +465,7 @@ class TaskRunner extends EventEmitter {
   /**
    * 等每个 frame 里的 OCS 真正初始化完再写配置。
    * iframe 里的脚本要一两秒才挂上 window.OCS，只写一次很容易扑空——
-   * 扑空的直接后果就是「你还没设置题库 / AI 答题不生效」。
+   * 扑空的直接后果就是「AI 答题不生效」。
    */
   async applyConfigWithRetry(targetPage, timeoutMs = 15000) {
     if (!targetPage || targetPage.isClosed()) return null;
@@ -548,9 +548,8 @@ class TaskRunner extends EventEmitter {
         if (c.ai) {
           settings.cfg.aiAnswerer = Object.assign({}, settings.cfg.aiAnswerer || {}, c.ai);
         }
-        if (Array.isArray(c.wrappers) && c.wrappers.length) {
-          settings.cfg.answererWrappers = c.wrappers;
-        }
+        // 题库已移除：无条件清空，避免旧配置在页面切换后又冒出来
+        settings.cfg.answererWrappers = [];
         if (c.disableSync) settings.cfg.closeSync = true;
         if (c.cryptoTextMode) settings.cfg.cryptoTextMode = c.cryptoTextMode;
         if (c.cryptoTextBatch) settings.cfg.cryptoTextBatch = c.cryptoTextBatch;
@@ -560,12 +559,12 @@ class TaskRunner extends EventEmitter {
           ok: true,
           aiEnabled: !!ai.enabled,
           model: ai.model || '',
-          wrappers: (settings.cfg.answererWrappers || []).length
+          wrappers: 0
         };
       },
       {
         ai: cfg.ai,
-        wrappers: cfg.answererWrappers,
+        wrappers: [],
         disableSync: cfg.ocs && cfg.ocs.disableConfigSync,
         cryptoTextMode: cfg.ocs && cfg.ocs.cryptoText && cfg.ocs.cryptoText.mode,
         cryptoTextBatch: cfg.ocs && cfg.ocs.cryptoText && cfg.ocs.cryptoText.aiBatch,
@@ -772,7 +771,7 @@ class TaskRunner extends EventEmitter {
       this.addLog(
         task,
         'info',
-        `配置已生效：AI ${mainApplied.aiEnabled ? '已启用(' + mainApplied.model + ')' : '未启用'}，题库 ${mainApplied.wrappers} 个`
+        `配置已生效：AI ${mainApplied.aiEnabled ? '已启用(' + mainApplied.model + ')' : '未启用'}`
       );
     }
 

@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name       				OCS 网课助手
-// @version    				5.4.1
+// @version    				5.4.2
 // @description				OCS(online-course-script) 网课助手，官网 https://docs.ocsjs.com ，专注于帮助大学生从网课中释放出来 让自己的时间把握在自己的手中，拥有人性化的操作页面，流畅的步骤提示，支持  【超星学习通】 【知到智慧树】 【职教云】 【智慧职教】 【中国大学MOOC】 【雨课堂】 等网课的学习，作业。具体的功能请查看脚本悬浮窗中的教程页面。
 // @author     				enncy
 // @license    				MIT
@@ -4550,11 +4550,8 @@ var __publicField = (obj, key, value) => {
     }
     return true;
   }
-  /** 是否具备任意一种答题渠道（题库 或 AI） */
+  /** 本版本只使用 AI 答题，题库已经移除；参数保留仅为兼容旧调用点 */
   function hasAnswererSource(wrappers) {
-    if (Array.isArray(wrappers) ? wrappers.length > 0 : Boolean(wrappers)) {
-      return true;
-    }
     return isAiAnswererReady();
   }
   /** 图片题优化是否需要提示「题库不支持图片」：AI 支持图片时不再提示 */
@@ -4750,7 +4747,7 @@ var __publicField = (obj, key, value) => {
       } catch (error) {
         lastError = error;
         const message = String((error == null ? void 0 : error.message) || error || "");
-        console.warn("[AI 答题] 请求失败：", error, { url, attempt });
+        logAi("[AI 答题] 第 " + (attempt + 1) + " 次请求失败：" + ((error == null ? void 0 : error.message) || error), "warn");
         if (requestType === "GM_xmlhttpRequest" && /GM_xmlhttpRequest/.test(message)) {
           requestType = "fetch";
           attempt--;
@@ -4886,11 +4883,31 @@ var __publicField = (obj, key, value) => {
     return stripAiOptionPrefix(raw);
   }
   /** 用 AI 搜一道题，返回与题库一致的结构，方便复用后续解析流程 */
+  /**
+   * AI 答题的日志。同一个字符串既写浏览器控制台，也写 OCS 的日志面板，
+   * 这样服务端「[页面] …」里能直接看到 AI 到底有没有发请求、为什么失败。
+   */
+  function logAi(message, level) {
+    const text = String(message);
+    try {
+      if (level === "error") {
+        console.error(text);
+        $console.error(text);
+      } else if (level === "warn") {
+        console.warn(text);
+        $console.warn(text);
+      } else {
+        console.log(text);
+        $console.log(text);
+      }
+    } catch (e) {
+    }
+  }
   async function searchAnswerByAI(cfg, env) {
     const model = cfg.model || "AI";
     const startedAt = Date.now();
     const brief = String(env.title || "").replace(/\s+/g, " ").trim().slice(0, 24);
-    console.log("[AI 答题] 请求 " + model + (brief ? "：" + brief : "") + "（超时 " + progressSeconds(cfg.timeoutSeconds) + "）");
+    logAi("[AI 答题] 请求 " + model + (brief ? "：" + brief : "") + "（超时 " + progressSeconds(cfg.timeoutSeconds) + "）");
     const info = {
       url: resolveAiEndpoint(cfg.baseUrl),
       name: "AI 答题 · " + model,
@@ -4919,13 +4936,13 @@ var __publicField = (obj, key, value) => {
             raw: String(content).slice(0, 300)
           }
         });
-        console.log("[AI 答题] 已返回（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）：" + String(answer).slice(0, 40));
+        logAi("[AI 答题] 已返回（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）：" + String(answer).slice(0, 40));
       } else {
         info.error = "AI 未能给出有效答案（返回：" + String(content).slice(0, 80) + "）";
-        console.warn("[AI 答题] 未解析出答案（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）");
+        logAi("[AI 答题] 未解析出答案（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）", "warn");
       }
     } catch (error) {
-      console.warn("[AI 答题] 失败（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）：" + ((error == null ? void 0 : error.message) || error || "未知错误"));
+      logAi("[AI 答题] 失败（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）：" + ((error == null ? void 0 : error.message) || error || "未知错误"), "error");
       info.error = (error == null ? void 0 : error.message) || "AI 答题失败";
     }
     return info;
@@ -5142,14 +5159,12 @@ var __publicField = (obj, key, value) => {
     });
     return modal;
   }
+  /**
+   * 本版本只使用 AI 答题。
+   * answererWrappers 参数仅为兼容各调用点签名而保留，题库逻辑已彻底移除：
+   * 不管配置里残留什么题库，都不会再发任何题库请求。
+   */
   async function defaultAnswerWrapperHandler(answererWrappers, env) {
-    const searchInfos = [];
-    const temp = Array.isArray(answererWrappers) ? JSON.parse(JSON.stringify(answererWrappers)) : [];
-    const aiAnswererConfig = getAiAnswererConfig();
-    const useAiAnswerer = isAiAnswererReady(aiAnswererConfig);
-    if (temp.length === 0 && !useAiAnswerer) {
-      throw new Error("题库配置不能为空，请配置题库或「AI 答题」后重新开始自动答题。");
-    }
     if (env.title === void 0)
       env.title = "";
     if (env.options === void 0)
@@ -5162,134 +5177,22 @@ var __publicField = (obj, key, value) => {
       env.suggestion_title = "";
     if (env.suggestion_options === void 0)
       env.suggestion_options = "";
-    // AI 答题与题库并行请求，AI 的结果稍后插入到 searchInfos 最前面
-    const aiAnswererTask = useAiAnswerer ? searchAnswerByAI(aiAnswererConfig, env) : void 0;
-    await Promise.all(
-      temp.map(async (wrapper) => {
-        var _a;
-        const {
-          name = "未知题库",
-          homepage = "#",
-          method = "get",
-          type = "fetch",
-          contentType = "json",
-          responseType = "json",
-          headers = {},
-          data: wrapperData = {},
-          handler = "return (res)=> [JSON.stringify(res), undefined]"
-        } = wrapper;
-        if (method.toLocaleLowerCase() === "post") {
-          if (!Object.keys(headers).some((k) => k.toLowerCase() === "content-type")) {
-            headers["Content-Type"] = "application/json";
-          }
-        }
-        try {
-          let results = [];
-          let requestData;
-          let url;
-          if (method.toLocaleLowerCase() === "get") {
-            url = new URL(resolvePlaceHolder(wrapper.url, { encodeURI: true }));
-            Object.keys(wrapperData).forEach((key) => {
-              url.searchParams.set(key, resolvePlaceHolder(wrapperData[key]));
-            });
-            requestData = {};
-          } else if (method.toLocaleLowerCase() === "post") {
-            url = new URL(wrapper.url);
-            const data = /* @__PURE__ */ Object.create({});
-            Object.keys(wrapperData).forEach((key) => {
-              if (typeof wrapperData[key] === "object" && Reflect.has(wrapperData[key], "handler")) {
-                const handler2 = Function(Reflect.get(wrapperData[key], "handler"))();
-                if (typeof handler2 !== "function") {
-                  throw new Error("data 字段解析器必须返回一个函数");
-                }
-                const result = handler2(env);
-                Reflect.set(data, key, result);
-              } else {
-                Reflect.set(data, key, resolvePlaceHolder(wrapperData[key]));
-              }
-            });
-            requestData = data;
-          } else {
-            throw new Error("不支持的请求方式");
-          }
-          const wrapperTimeoutMs = ((_a = AnswerWrapperHandlerConfig.timeout_seconds) != null ? _a : 60) * 1e3;
-          const responseData = await Promise.race([
-            request(url.toString(), {
-              method,
-              responseType: responseType || contentType,
-              data: requestData,
-              type,
-              timeout: wrapperTimeoutMs + 2000,
-              headers: JSON.parse(JSON.stringify(headers || {}))
-            }),
-            $.sleep(wrapperTimeoutMs + 5000)
-          ]);
-          if (responseData === void 0) {
-            throw new Error("题库请求超时，可能是题库问题，或者请检查网络或者重试。");
-          }
-          const responseHandler = Function(handler)();
-          if (typeof responseHandler !== "function") {
-            throw new Error("handler 响应处理器必须返回一个函数");
-          }
-          const info = responseHandler(responseData);
-          if (info && Array.isArray(info)) {
-            if (info.every((item) => Array.isArray(item))) {
-              results = results.concat(
-                info.map((item) => ({
-                  question: item[0],
-                  answer: item[1],
-                  extra_data: item[2] || {}
-                }))
-              );
-            } else {
-              results.push({
-                question: info[0],
-                answer: info[1],
-                extra_data: info[2] || {}
-              });
-            }
-          }
-          searchInfos.push({
-            url: wrapper.url,
-            name,
-            homepage,
-            results,
-            response: responseData,
-            data: requestData
-          });
-        } catch (error) {
-          console.error(error);
-          searchInfos.push({
-            url: wrapper.url,
-            name,
-            homepage,
-            results: [],
-            response: void 0,
-            data: void 0,
-            error: (error == null ? void 0 : error.message) || "题库连接失败"
-          });
-        }
-      })
-    );
-    function resolvePlaceHolder(data, options) {
-      if (typeof data === "string") {
-        const matches2 = data.match(/\${(.*?)}/g) || [];
-        matches2.forEach((placeHolder) => {
-          const value = env[placeHolder.replace(/\${(.*)}/, "$1")];
-          data = data.replace(placeHolder, (options == null ? void 0 : options.encodeURI) ? encodeURIComponent(value) : value);
-        });
-      } else if (typeof data === "object") {
-        const keys = Object.keys(data);
-        for (const key of keys) {
-          data[key] = resolvePlaceHolder(data[key], options);
-        }
-      }
-      return data;
+    const aiAnswererConfig = getAiAnswererConfig();
+    if (!isAiAnswererReady(aiAnswererConfig)) {
+      logAi(
+        "[AI 答题] 未就绪：enabled=" + !!aiAnswererConfig.enabled +
+          "，baseUrl=" + (aiAnswererConfig.baseUrl || "(空)") +
+          "，model=" + (aiAnswererConfig.model || "(空)") +
+          "，key=" + (aiAnswererConfig.apiKey ? "已填" : "空"),
+        "error"
+      );
+      throw new Error("还没有配置「AI 答题」，无法搜题。请打开 通用-全局设置，在「AI 答题（大模型答题）」里填写接口地址、密钥和模型。");
     }
-    if (aiAnswererTask) {
-      searchInfos.unshift(await aiAnswererTask);
+    const info = await searchAnswerByAI(aiAnswererConfig, env);
+    if (!info.results || info.results.length === 0) {
+      throw new Error(info.error || "AI 没有返回可用答案");
     }
-    return searchInfos;
+    return [info];
   }
   class AnswerWrapperParser {
     static fromObject(json) {
@@ -5511,10 +5414,17 @@ var __publicField = (obj, key, value) => {
               resolve();
             }
           }, 200);
+          // 题库已移除，等的是 AI：按 AI 自己的「单次超时 × 重试次数」估算等待上限，
+          // 避免用户把 AI 超时调大后，外层仍按老的 120+10 秒提前判死。
+          const aiCfg = getAiAnswererConfig();
+          const perTryMs = (Math.max(5, Number(aiCfg.timeoutSeconds) || 60) + 8) * 1e3;
+          const tries = Math.max(0, Math.min(2, Number(aiCfg.retry) || 0)) + 1;
+          const baseMs = (Math.max(10, Number(AnswerWrapperHandlerConfig.timeout_seconds) || 120) + 10) * 1e3;
+          const waitMs = Math.max(baseMs, perTryMs * tries + 15e3);
           const timeout = setTimeout(() => {
             clearInterval(interval);
-            reject(new Error("答题超时！"));
-          }, (AnswerWrapperHandlerConfig.timeout_seconds + 10) * 1e3);
+            reject(new Error("等待 AI 答题超过 " + Math.round(waitMs / 1e3) + " 秒仍未返回，请检查 AI 接口地址、密钥与网络。"));
+          }, waitMs);
         });
       };
       const resolverThread = async () => {
@@ -5522,6 +5432,7 @@ var __publicField = (obj, key, value) => {
         for (let index = 0; index < results.length; index++) {
           const result = results[index];
           let error;
+          let waitError;
           let res;
           if (this.isClose === true) {
             this.isRunning = false;
@@ -5533,6 +5444,7 @@ var __publicField = (obj, key, value) => {
             }
             await waitForRequested(result);
           } catch (err) {
+            waitError = err;
           }
           try {
             if (result.ctx && result.ctx.searchInfos.length !== 0) {
@@ -5556,7 +5468,7 @@ var __publicField = (obj, key, value) => {
                 res = await work2(result.ctx);
               }
             } else {
-              error = result.error || "搜索不到答案, 请重新运行, 或者忽略此题。";
+              error = result.error || (waitError && waitError.message) || "AI 没有给出答案，请检查 AI 配置后重试，或忽略此题。";
             }
           } catch (err) {
             error = (err == null ? void 0 : err.message) || err;
@@ -13070,7 +12982,8 @@ ${content}</tr>
         throw new Error("题目为空，请查看题目是否为空，或者忽略此题");
       }
       const titleImages = titleResult.images;
-      return await BackgroundProject.scripts.data.methods.searchAnswerInCaches(title, async () => {
+      // 题库缓存通道也已移除，每题都直接问 AI
+      {
         var _a, _b, _c, _d, _e;
         await $.sleep(((_a = options.period) != null ? _a : 3) * 1e3);
         const optResult = normalize(
@@ -13113,7 +13026,7 @@ ${content}</tr>
           }
         }
         return searchInfos;
-      });
+      }
     };
   }
   function workPreCheckMessage(options) {
@@ -13874,20 +13787,20 @@ ${content}</tr>
             label: "图片题优化",
             attrs: {
               type: "checkbox",
-              title: `遇到图片题解析图片成 Base64 上传给题库，防止遇到防盗链等问题无法加载。需题库配置支持（POST 方法且引用了 \${images} / \${suggestion_title} / \${suggestion_options} 字段），否则需重新配置题库。原题 title / options 不会被修改。`
+              title: `遇到图片题时把图片解析成 Base64 一起发给 AI，避免防盗链导致图片加载不出来。原题 title / options 不会被修改。`
             },
             defaultValue: true
           },
           answerWrapperHandlerTimeout: {
             showIf: "common.settings.advancedSettings",
             elementClassName: "config-details",
-            label: "搜题最大耗时（秒）",
+            label: "单题等待上限（秒）",
             attrs: {
               type: "number",
               min: 10,
               step: 1,
               max: 3 * 60,
-              title: "搜题超时时间，单位为秒，超过这个时间直接放弃，进行下一题搜索。"
+              title: "等待 AI 返回答案的最长时间，超过这个时间直接放弃，进行下一题。AI 自身的超时与重试在「AI 答题」里单独配置。"
             },
             defaultValue: 120
           },
@@ -13993,9 +13906,9 @@ ${content}</tr>
             ]
           },
           enableQuestionCaches: {
-            label: "题库缓存功能",
+            label: "本地答题记录",
             defaultValue: true,
-            attrs: { type: "checkbox" },
+            attrs: { type: "checkbox", title: "只做记录，方便事后查看；本版本搜题不会再读缓存，每题都会问 AI。" },
             suffixSlot: function() {
               const btn = lib.h("button", { className: "base-style-button-secondary" }, "⚙️管理缓存");
               btn.onclick = () => {
@@ -14009,9 +13922,8 @@ ${content}</tr>
           return {
             getWorkOptions: () => {
               const workOptions = JSON.parse(JSON.stringify(this.cfg));
-              workOptions.answererWrappers = workOptions.answererWrappers.filter(
-                (aw) => this.cfg.disabledAnswererWrapperNames.find((daw) => daw === aw.name) === void 0
-              );
+              // 题库已移除：即使旧配置里残留题库，也不再向下传递
+              workOptions.answererWrappers = [];
               return workOptions;
             },
             notificationBySetting: (content, opts) => {
@@ -14029,6 +13941,10 @@ ${content}</tr>
         },
         oncomplete({ OCS_TYPE }) {
           this.cfg.OCS_TYPE = OCS_TYPE;
+          // 清掉旧版本残留的题库配置，避免任何地方再去请求题库
+          if (Array.isArray(this.cfg.answererWrappers) && this.cfg.answererWrappers.length) {
+            this.cfg.answererWrappers = [];
+          }
           AnswerWrapperHandlerConfig.timeout_seconds = this.cfg.answerWrapperHandlerTimeout;
           this.onConfigChange("answerWrapperHandlerTimeout", (sec) => {
             AnswerWrapperHandlerConfig.timeout_seconds = sec;
@@ -14342,8 +14258,8 @@ ${content}</tr>
             content2.style.marginBottom = "12px";
           });
           const search = async (value) => {
-            if (!hasAnswererSource(CommonProject.scripts.settings.cfg.answererWrappers)) {
-              lib.$modal.alert({ content: "请先在 通用-全局设置 配置题库，才能进行在线搜题。" });
+            if (!hasAnswererSource()) {
+              lib.$modal.alert({ content: "请先在 通用-全局设置 配置「AI 答题」，才能进行在线搜题。" });
               return;
             }
             content.replaceChildren(lib.h("span", "搜索中..."));
@@ -18746,7 +18662,7 @@ self.onmessage = function (e) {
         },
         onrender({ panel }) {
           var _a;
-          if (!((_a = CommonProject.scripts.settings.cfg.answererWrappers) == null ? void 0 : _a.length)) {
+          if (!isAiAnswererReady()) {
             answerWrapperEmptyWarning(10);
           }
           this.offConfigChange(state$4.study.playbackRateWarningListenerId);

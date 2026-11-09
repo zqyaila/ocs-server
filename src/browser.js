@@ -128,9 +128,10 @@ class BrowserHost {
   }
 
   /**
-   * 把控制台里的 AI / 题库配置直接写进 GM 存储。
+   * 把控制台里的 AI 配置直接写进 GM 存储。
    * 脚本每次读 cfg 都是从 GM 里取的，只靠运行期改内存对象不够——
    * 页面一换（进作业、切章节）就回到旧值，AI 就"莫名其妙不生效"。
+   * 题库已彻底移除，这里顺手把残留的题库配置清空。
    */
   syncConfigToStore() {
     // 每个用户可以有自己的接口/Key（见 user-ai.js），这里取这个人实际生效的那份
@@ -138,10 +139,8 @@ class BrowserHost {
     if (ai && typeof ai === 'object') {
       this.bridge.store['common.settings.aiAnswerer'] = JSON.parse(JSON.stringify(ai));
     }
-    const wrappers = this.config.data.answererWrappers;
-    if (Array.isArray(wrappers)) {
-      this.bridge.store['common.settings.answererWrappers'] = JSON.parse(JSON.stringify(wrappers));
-    }
+    // 题库通道已删除：清掉旧存储，免得脚本以为还有题库可用
+    this.bridge.store['common.settings.answererWrappers'] = [];
     if (this.config.data.ocs && this.config.data.ocs.imageOptimize !== undefined) {
       this.bridge.store['common.settings.imageOptimize'] = !!this.config.data.ocs.imageOptimize;
     }
