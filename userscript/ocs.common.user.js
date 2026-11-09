@@ -578,6 +578,18 @@ var __publicField = (obj, key, value) => {
   function removeRedundant(str) {
     return linearizeLatex((str == null ? void 0 : str.trim()) || "").replace(/^[A-Z]{1}[^A-Za-z0-9⺀-鿿]+([A-Za-z0-9⺀-鿿]+)/, "$1").replace(/^[A-Z]{1}([⺀-鿿][A-Za-z0-9⺀-鿿]*)/, "$1") || "";
   }
+  /** GM_xmlhttpRequest 的 onerror 给的是对象，直接 reject 会变成 "[object Object]" */
+  function toRequestError(err, fallback) {
+    if (err instanceof Error) return err;
+    var msg = "";
+    if (err && typeof err === "object") {
+      msg = err.error || err.message || err.statusText || "";
+      if (!msg && err.status) msg = "HTTP " + err.status;
+    } else if (err !== undefined && err !== null) {
+      msg = String(err);
+    }
+    return new Error(msg && msg !== "[object Object]" ? String(msg) : (fallback || "请求失败"));
+  }
   function request(url, opts) {
     return new Promise((resolve, reject) => {
       try {
@@ -587,12 +599,14 @@ var __publicField = (obj, key, value) => {
           if (typeof GM_xmlhttpRequest !== "undefined") {
             const contentType = headers["Content-Type"] || headers["content-type"];
             const requestData = contentType === "application/x-www-form-urlencoded" ? new URLSearchParams(data).toString() : Object.keys(data).length ? JSON.stringify(data) : void 0;
+            const gmTimeout = Number(opts.timeout);
             GM_xmlhttpRequest({
               url,
               method: method.toUpperCase(),
               data: requestData,
               headers: Object.keys(headers).length ? headers : void 0,
               responseType: responseType === "json" ? "json" : void 0,
+              timeout: Number.isFinite(gmTimeout) && gmTimeout > 0 ? gmTimeout : void 0,
               onload: (response) => {
                 if (opts.anyStatus) {
                   resolve({ status: response.status, responseText: response.responseText || "" });
@@ -613,8 +627,15 @@ var __publicField = (obj, key, value) => {
                 }
               },
               onerror: (err) => {
-                console.error("GM_xmlhttpRequest error", err);
-                reject(err);
+                const reqErr = toRequestError(err, "网络请求失败");
+                console.warn("[请求失败] " + reqErr.message + " " + url);
+                reject(reqErr);
+              },
+              ontimeout: () => {
+                reject(new Error("请求超时（" + Math.round((Number(opts.timeout) || 30000) / 1e3) + " 秒内无响应）"));
+              },
+              onabort: () => {
+                reject(new Error("请求被中断"));
               }
             });
           } else {
@@ -4714,6 +4735,9 @@ var __publicField = (obj, key, value) => {
       data.max_tokens = maxTokens;
     }
     const timeoutMs = Math.max(5, Number(cfg.timeoutSeconds) || 60) * 1e3;
+    // 底层请求自己带 2 秒余量先超时，这样能拿到「请求超时」这种明确原因，
+    // 而不是被外层 race 兜底成一个笼统的 token
+    const requestTimeoutMs = timeoutMs + 2000;
     let requestType = cfg.requestType && cfg.requestType !== "auto" ? cfg.requestType : typeof GM_xmlhttpRequest !== "undefined" ? "GM_xmlhttpRequest" : "fetch";
     const retry = Number.isFinite(Number(cfg.retry)) ? Math.max(0, Math.min(2, Number(cfg.retry))) : 1;
     let lastError;
@@ -4724,10 +4748,11 @@ var __publicField = (obj, key, value) => {
             method: "post",
             type: requestType,
             responseType: "json",
+            timeout: requestTimeoutMs,
             headers: Object.assign({}, headers),
             data
           }),
-          $.sleep(timeoutMs).then(() => AI_ANSWERER_TIMEOUT_TOKEN)
+          $.sleep(requestTimeoutMs + 3000).then(() => AI_ANSWERER_TIMEOUT_TOKEN)
         ]);
         if (result === AI_ANSWERER_TIMEOUT_TOKEN) {
           throw new Error("请求超时（" + Math.round(timeoutMs / 1e3) + " 秒），可尝试调大超时时间或更换模型");
@@ -4874,6 +4899,9 @@ var __publicField = (obj, key, value) => {
   /** 用 AI 搜一道题，返回与题库一致的结构，方便复用后续解析流程 */
   async function searchAnswerByAI(cfg, env) {
     const model = cfg.model || "AI";
+    const startedAt = Date.now();
+    const brief = String(env.title || "").replace(/\s+/g, " ").trim().slice(0, 24);
+    console.log("[AI 答题] 请求 " + model + (brief ? "：" + brief : "") + "（超时 " + progressSeconds(cfg.timeoutSeconds) + "）");
     const info = {
       url: resolveAiEndpoint(cfg.baseUrl),
       name: "AI 答题 · " + model,
@@ -4886,7 +4914,6 @@ var __publicField = (obj, key, value) => {
     try {
       const messages = buildAiAnswererMessages(cfg, env);
       info.data = { model: cfg.model, messages };
-      const startedAt = Date.now();
       const content = await requestAiAnswererCompletion(cfg, messages);
       info.response = content;
       info.cost = Date.now() - startedAt;
@@ -4903,14 +4930,21 @@ var __publicField = (obj, key, value) => {
             raw: String(content).slice(0, 300)
           }
         });
+        console.log("[AI 答题] 已返回（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）：" + String(answer).slice(0, 40));
       } else {
         info.error = "AI 未能给出有效答案（返回：" + String(content).slice(0, 80) + "）";
+        console.warn("[AI 答题] 未解析出答案（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）");
       }
     } catch (error) {
-      console.warn("[AI 答题]", error);
+      console.warn("[AI 答题] 失败（" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）：" + ((error == null ? void 0 : error.message) || error || "未知错误"));
       info.error = (error == null ? void 0 : error.message) || "AI 答题失败";
     }
     return info;
+  }
+  /** 把秒数说成人话，日志里直接用 */
+  function progressSeconds(value) {
+    const n = Math.max(5, Number(value) || 60);
+    return n >= 60 ? (n % 60 === 0 ? n / 60 + " 分钟" : n + " 秒") : n + " 秒";
   }
   function renderAiAnswererButtonState(el) {
     const cfg = getAiAnswererConfig();
@@ -5192,15 +5226,17 @@ var __publicField = (obj, key, value) => {
           } else {
             throw new Error("不支持的请求方式");
           }
+          const wrapperTimeoutMs = ((_a = AnswerWrapperHandlerConfig.timeout_seconds) != null ? _a : 60) * 1e3;
           const responseData = await Promise.race([
             request(url.toString(), {
               method,
               responseType: responseType || contentType,
               data: requestData,
               type,
+              timeout: wrapperTimeoutMs + 2000,
               headers: JSON.parse(JSON.stringify(headers || {}))
             }),
-            $.sleep(((_a = AnswerWrapperHandlerConfig.timeout_seconds) != null ? _a : 60) * 1e3)
+            $.sleep(wrapperTimeoutMs + 5000)
           ]);
           if (responseData === void 0) {
             throw new Error("题库请求超时，可能是题库问题，或者请检查网络或者重试。");
