@@ -13,7 +13,7 @@ SetCompressorDictSize 64
 
 Name "${APP_NAME} ${APP_VER}"
 BrandingText "${APP_NAME} ${APP_VER}"
-OutFile "..\dist\OCS网课助手-Setup-${APP_VER}.exe"
+OutFile "..\dist\OCS-Setup-${APP_VER}.exe"
 InstallDir "$LOCALAPPDATA\Programs\OCS"
 InstallDirRegKey HKCU "Software\OCS-Server" "InstallDir"
 RequestExecutionLevel user

@@ -19,7 +19,7 @@
 
 只想在自己的 Windows 电脑上用，不需要命令行，也不需要装 Node：
 
-1. 下载 `OCS网课助手-Setup-2.8.0.exe`（24MB）；
+1. 下载 `OCS-Setup-2.8.0.exe`（24MB）；
 2. 双击 → 下一步 → 完成；
 3. 桌面双击「OCS 网课助手」，会自动打开浏览器到控制台。
 
@@ -44,7 +44,7 @@ Windows 机器上不需要装 Windows SDK，Linux 也能交叉编译：
 ```bash
 sudo apt install nsis gcc-mingw-w64-x86-64
 bash packaging/build-windows.sh
-# 产物：dist/OCS网课助手-Setup-<版本>.exe
+# 产物：dist/OCS-Setup-<版本>.exe
 ```
 
 脚本会自动下载 Windows 版 Node（约 34MB，缓存在 `packaging/vendor/`）、编译启动器、打包 `src` + `userscript` + `playwright-core`。

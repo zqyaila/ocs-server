@@ -3,7 +3,7 @@
 #
 #   bash packaging/build-windows.sh
 #
-# 产物：dist/OCS网课助手-Setup-<版本>.exe
+# 产物：dist/OCS-Setup-<版本>.exe
 #
 # 依赖：makensis（NSIS）、可选 x86_64-w64-mingw32-gcc（编译启动器）
 set -euo pipefail
@@ -77,4 +77,4 @@ echo ""
 echo "==> 完成"
 ls -lh "$DIST"/*.exe
 echo ""
-echo "安装包：$DIST/OCS网课助手-Setup-$VERSION.exe"
+echo "安装包：$DIST/OCS-Setup-$VERSION.exe"
