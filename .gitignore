@@ -13,3 +13,10 @@ old-packages/
 # 系统杂项
 .DS_Store
 Thumbs.db
+
+# Windows 安装包构建：产物与下载缓存都不入库
+dist/
+packaging/staging/
+packaging/vendor/
+packaging/*.res
+packaging/*.exe

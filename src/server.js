@@ -407,6 +407,12 @@ const server = http.createServer(async (req, res) => {
   let pathname = url.pathname;
 
   if (!pathname.startsWith('/api/')) return serveStatic(req, res, pathname);
+
+  // 启动器用它判断「这个端口上是不是已经跑着本程序」，不走 token，避免设了令牌就误判成别的程序
+  if (pathname === '/api/ping' && method === 'GET') {
+    return send(res, 200, { ok: true, name: 'ocs-server', version: PKG_VERSION });
+  }
+
   if (!auth(req, res)) return;
 
   // 兼容 v2.1 的旧前端（浏览器可能还缓存着 /api/tasks）

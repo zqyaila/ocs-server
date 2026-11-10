@@ -16,19 +16,38 @@ const CANDIDATE_BINARIES = [
   '/snap/bin/chromium'
 ];
 
+/**
+ * Windows 上的浏览器候选。安装包不再附带一份 Chromium（多 300MB），
+ * 直接用系统自带的 Edge —— 它就是 Chromium 内核，Playwright 可以正常驱动。
+ * 用户装了 Chrome 的话也能用上。
+ */
+function windowsCandidates() {
+  if (process.platform !== 'win32') return [];
+  const roots = [process.env['ProgramFiles'], process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA].filter(Boolean);
+  const rels = [
+    ['Microsoft', 'Edge', 'Application', 'msedge.exe'],
+    ['Google', 'Chrome', 'Application', 'chrome.exe']
+  ];
+  const out = [];
+  for (const root of roots) {
+    for (const rel of rels) out.push(path.join(root, ...rel));
+  }
+  return out;
+}
+
 // GM 存储的命名空间由 user.id 决定（见 BrowserHost.scope）
 
 function resolveExecutable(configured) {
   if (configured && fs.existsSync(configured)) return configured;
-  for (const p of CANDIDATE_BINARIES) {
+  for (const p of [...CANDIDATE_BINARIES, ...windowsCandidates()]) {
     if (fs.existsSync(p)) return p;
   }
-  // 回退到 playwright 自带缓存目录
-  const cache = path.join(process.env.HOME || '/root', '.cache', 'ms-playwright');
+  // 回退到 playwright 自带缓存目录（Linux 手动 npx playwright install 的情况）
+  const cache = path.join(process.env.HOME || process.env.USERPROFILE || '/root', '.cache', 'ms-playwright');
   try {
     for (const dir of fs.readdirSync(cache)) {
       if (!dir.startsWith('chromium-')) continue;
-      for (const sub of ['chrome-linux64/chrome', 'chrome-linux/chrome']) {
+      for (const sub of ['chrome-linux64/chrome', 'chrome-linux/chrome', 'chrome-win/chrome.exe']) {
         const p = path.join(cache, dir, sub);
         if (fs.existsSync(p)) return p;
       }
@@ -170,7 +189,11 @@ class BrowserHost {
     const c = this.config.data.browser;
     const executablePath = resolveExecutable(c.executablePath);
     if (!executablePath) {
-      throw new Error('未找到 Chromium/Chrome，可执行文件路径不存在。请安装 chromium 或在配置中指定 browser.executablePath');
+      throw new Error(
+        process.platform === 'win32'
+          ? '没找到 Edge 或 Chrome。请先安装 Microsoft Edge（Win10/11 一般自带），或在配置里指定 browser.executablePath'
+          : '未找到 Chromium/Chrome，可执行文件路径不存在。请安装 chromium 或在配置中指定 browser.executablePath'
+      );
     }
     const userDataDir = userProfileDir(this.user.id);
     fs.mkdirSync(userDataDir, { recursive: true });

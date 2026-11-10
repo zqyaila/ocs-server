@@ -1,0 +1,28 @@
+#include <winver.h>
+
+1 ICON "ocs.ico"
+
+1 VERSIONINFO
+FILEVERSION 2,8,0,0
+PRODUCTVERSION 2,8,0,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "080404b0"
+    BEGIN
+      VALUE "CompanyName", "OCS"
+      VALUE "FileDescription", "OCS 网课助手"
+      VALUE "FileVersion", "2.8.0"
+      VALUE "InternalName", "ocs-server"
+      VALUE "OriginalFilename", "OCS网课助手.exe"
+      VALUE "ProductName", "OCS 网课助手"
+      VALUE "ProductVersion", "2.8.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x804, 1200
+  END
+END

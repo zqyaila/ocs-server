@@ -15,6 +15,43 @@
 
 ---
 
+## 零、Windows 电脑：装个 exe 就行
+
+只想在自己的 Windows 电脑上用，不需要命令行，也不需要装 Node：
+
+1. 下载 `OCS网课助手-Setup-2.8.0.exe`（24MB）；
+2. 双击 → 下一步 → 完成；
+3. 桌面双击「OCS 网课助手」，会自动打开浏览器到控制台。
+
+| 项 | 说明 |
+| --- | --- |
+| 运行时 | 自带 Node.js，不用另装 |
+| 浏览器 | 用系统自带的 Microsoft Edge（Win10/11 都有），所以安装包只有 24MB |
+| 安装位置 | `%LOCALAPPDATA%\Programs\OCS`，**不需要管理员权限** |
+| 数据 | 同目录下 `app\data`，卸载时默认保留（登录态不用重扫） |
+| 端口 | 默认 `8899`，被占用会自动换一个；已经在跑就直接打开，不会起第二个 |
+| 停止 | 关掉那个黑色窗口就是停服务 |
+
+> **第一次运行会弹「Windows 已保护你的电脑」**：安装包没有购买代码签名证书，SmartScreen 对陌生 exe 一律拦。
+> 点「更多信息」→「仍要运行」即可，不是病毒。介意的话可以自己按下面的方式从源码构建。
+
+装完直接看「三、首次使用：登录」。后面「一、二」是 Linux / NAS / 树莓派 的部署方式。
+
+### 自己构建安装包
+
+Windows 机器上不需要装 Windows SDK，Linux 也能交叉编译：
+
+```bash
+sudo apt install nsis gcc-mingw-w64-x86-64
+bash packaging/build-windows.sh
+# 产物：dist/OCS网课助手-Setup-<版本>.exe
+```
+
+脚本会自动下载 Windows 版 Node（约 34MB，缓存在 `packaging/vendor/`）、编译启动器、打包 `src` + `userscript` + `playwright-core`。
+换 Node 版本：`NODE_VER=v22.23.4 bash packaging/build-windows.sh`。
+
+---
+
 ## 一、先做这一步：环境自检
 
 **不要跳过。** 服务端挂课唯一的技术门槛是「视频能不能解码」。少数设备/构建缺 H.264 解码器时的表现非常隐蔽——页面正常、脚本正常、但视频进度条一动不动，所以用真实播放来验证，而不是看文档猜。
@@ -167,6 +204,25 @@ sudo systemctl start ocs-server
 
 另外修了一个会让答题流程中断的问题：`waitFor` 超时后原本直接 `reject`，
 调用方没 catch 就会把整个答题循环打断；现在未指定错误文案时改为「打日志并继续」，指定了才抛错。
+
+#### v2.8.0：Windows 一键安装包
+
+不用再装 Node、不用敲命令，双击 exe 就能用：
+
+- **自带运行时不带浏览器**：Node.js 打进去了；浏览器复用系统自带的 Edge（Win10/11 都有），
+  所以安装包只有 24MB，而不是 三四百 MB；
+- 原生启动器（C 编译，非批处理）：设窗口标题、UTF-8 输出、启动失败弹中文提示；
+- 端口被占用自动顺延；检测到已经有一份在跑就直接开浏览器，不会起第二个；
+- 启动器用 Job Object 绑定 node：关掉窗口，服务一定跟着退，不会留个进程占着端口；
+- 首次运行只监听 `127.0.0.1`，不弹防火墙（想让手机看画面把 `server.host` 改成 `0.0.0.0`）；
+- 装到 `%LOCALAPPDATA%\Programs\OCS`，不需要管理员；卸载保留 `app\data`（登录态不用重扫）。
+
+服务端配套改动：
+
+- `/api/ping` 轻量探活接口，启动器用它判断「这个端口上是不是自己人」；
+- `browser.executablePath` 为空时自动找 Edge → Chrome（`Program Files` / `Program Files (x86)` / `LocalAppData` 三处）。
+
+构建方式见「零、Windows 电脑」里的「自己构建安装包」。
 
 #### v2.7.1：题库真正删干净，不再「干等两分钟说搜不到」
 
