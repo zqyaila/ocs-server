@@ -133,15 +133,21 @@ function waitReady(port, timeoutMs) {
   }
 
   process.env.OCS_PORT = String(port);
+
+  // 托盘启动器靠这个文件知道该开哪个端口（8899 可能已被占用而顺延）
+  try {
+    fs.writeFileSync(path.join(DATA_DIR, '.port'), String(port));
+  } catch (e) {}
+
   const url = 'http://127.0.0.1:' + port + '/';
 
-  // 让用户知道现在该干什么
+  // 让用户知道现在该干什么（窗口版写进 ocs.log，托盘版没人看控制台）
   console.log('');
   console.log('  OCS 网课助手');
   console.log('  ------------------------------');
   console.log('  地址：' + url);
   console.log('  数据：' + DATA_DIR);
-  console.log('  关闭这个窗口 = 停止服务');
+  console.log('  停止：右键任务栏右下角的托盘图标 → 退出');
   console.log('');
 
   require('./src/server.js');

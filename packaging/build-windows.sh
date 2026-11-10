@@ -62,7 +62,9 @@ if [ -f launcher.res ] && [ -f "OCS网课助手.exe" ]; then
 elif command -v x86_64-w64-mingw32-gcc >/dev/null; then
   echo "==> 编译 Windows 启动器"
   x86_64-w64-mingw32-windres launcher.rc -O coff -o launcher.res --codepage=65001
-  x86_64-w64-mingw32-gcc launcher.c launcher.res -o "OCS网课助手.exe" -luser32 -mconsole -O2 -s
+  # -mwindows：GUI 子系统，双击不弹控制台，程序常驻通知区域
+  x86_64-w64-mingw32-gcc launcher.c launcher.res -o "OCS网课助手.exe" \
+    -mwindows -lshell32 -luser32 -lgdi32 -lcomctl32 -finput-charset=UTF-8 -O2 -s
 else
   echo "缺少 mingw-w64，无法编译启动器（请先跑一次编译，或安装 gcc-mingw-w64-x86-64）"
   exit 1

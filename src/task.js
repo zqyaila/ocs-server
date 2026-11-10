@@ -632,7 +632,18 @@ class TaskRunner extends EventEmitter {
   }
 
   async clickByText(task, texts) {
-    for (const frame of this.page.frames()) {
+    // 看门狗是异步的：上一轮 tick 还在 await 里时，用户可能已经点了停止，
+    // cleanup() 会把 this.page 置空。这里不判空就会在定时器回调里抛
+    // TypeError（读 null 的 frames），一路冒到 uncaughtException 把整个服务带走。
+    if (!this.page || this.page.isClosed()) return false;
+    let frames;
+    try {
+      frames = this.page.frames();
+    } catch (e) {
+      return false;
+    }
+    for (const frame of frames) {
+      if (!frame || frame.isDetached()) continue;
       for (const text of texts) {
         const clicked = await frame
           .evaluate((t) => {
@@ -655,10 +666,19 @@ class TaskRunner extends EventEmitter {
   }
 
   async sampleProgress() {
-    if (!this.page || this.page.isClosed()) return null;
+    // 用局部引用：循环里 await 期间用户可能点了停止，this.page 会被清空
+    const page = this.page;
+    if (!page || page.isClosed()) return null;
     let time = 0;
     let playing = 0;
-    for (const frame of this.page.frames()) {
+    let frames;
+    try {
+      frames = page.frames();
+    } catch (e) {
+      return null;
+    }
+    for (const frame of frames) {
+      if (!frame || frame.isDetached()) continue;
       const res = await frame
         .evaluate(() => {
           const videos = Array.from(document.querySelectorAll('video'));
@@ -673,16 +693,29 @@ class TaskRunner extends EventEmitter {
         playing += res.playing;
       }
     }
-    return { time, playing, url: this.page.url() };
+    try {
+      return { time, playing, url: page.url() };
+    } catch (e) {
+      return null;
+    }
   }
 
   /** 读页面正文，判断是否被登录页 / enc 失效页挡住 */
   async detectGate() {
-    if (!this.page || this.page.isClosed()) return null;
-    const url = this.page.url();
+    const page = this.page;
+    if (!page || page.isClosed()) return null;
+    let url;
+    let frames;
+    try {
+      url = page.url();
+      frames = page.frames();
+    } catch (e) {
+      return null;
+    }
     // 超星的学习页是 iframe 套 iframe，提示文案常常打在内层框架里，
     // 只读主框架会漏判，所以逐个框架都看一遍
-    for (const frame of this.page.frames()) {
+    for (const frame of frames) {
+      if (!frame || frame.isDetached()) continue;
       const text = await frame
         .evaluate(() => {
           const body = document.body;
@@ -813,6 +846,7 @@ class TaskRunner extends EventEmitter {
         resolve();
       };
       const tick = async () => {
+        try {
         if (this.stopped || !this.page || this.page.isClosed()) return resolve();
         if (Date.now() > deadline) {
           this.addLog(task, 'info', '已达到单任务最长运行时间，结束该任务');
@@ -881,6 +915,14 @@ class TaskRunner extends EventEmitter {
           }
         }
         this.watchdog = setTimeout(tick, 20000);
+        } catch (e) {
+          // setTimeout 的回调抛异常没有任何地方接得住，会直接触发
+          // process 的 uncaughtException —— 一个账号的页面出问题，六个账号全停。
+          // 这里就地吞掉：页面没了就结束本轮，还在就 5 秒后重来。
+          if (this.stopped || !this.page || this.page.isClosed()) return resolve();
+          this.addLog(task, 'warn', `看门狗出错，5 秒后重试：${(e && e.message) || e}`);
+          this.watchdog = setTimeout(tick, 5000);
+        }
       };
       // 锁定模式只读一次 URL，可以查得勤一点，跳走能立刻拉回
       this.watchdog = setTimeout(tick, pin ? 2000 : 20000);

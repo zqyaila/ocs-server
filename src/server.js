@@ -1129,7 +1129,26 @@ async function shutdown(why) {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGHUP', () => shutdown('SIGHUP'));
-process.on('uncaughtException', (e) => {
-  logger.error('未捕获异常：' + ((e && e.stack) || e));
-  shutdown('异常退出');
-});
+/**
+ * 单个账号的页面出问题（页面被关、frame 被 detach、evaluate 抛错），
+ * 不该把整个多账号服务带走 —— 之前一次读 null 的 frames 就让 6 个账号一起停了。
+ * 所以这里默认只记录、不退出；只有短时间内疯狂出错（多半是句柄/内存耗尽）才自杀重启。
+ */
+let crashCount = 0;
+let crashWindow = 0;
+function noteCrash(label, e) {
+  logger.error(label + '：' + ((e && e.stack) || e));
+  const now = Date.now();
+  if (now - crashWindow > 60000) {
+    crashWindow = now;
+    crashCount = 0;
+  }
+  crashCount++;
+  if (crashCount > 20) {
+    logger.error(`1 分钟内 ${crashCount} 次未捕获异常，判定无法自愈，退出`);
+    shutdown('异常退出');
+  }
+}
+
+process.on('uncaughtException', (e) => noteCrash('未捕获异常', e));
+process.on('unhandledRejection', (e) => noteCrash('未处理的 Promise 异常', e));

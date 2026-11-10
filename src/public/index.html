@@ -1101,7 +1101,7 @@ function taskHtml(t) {
         <span class="badge ${st}">${statusText(st)}</span>
       </div>
       <div class="addr-row">
-        <input class="task-addr" data-addr="${t.id}" value="${escapeHtml(t.pageUrl || t.lastUrl || t.url || '')}" placeholder="粘贴课程 / 作业地址，回车前往" spellcheck="false" />
+        <input class="task-addr" data-addr="${t.id}" value="${escapeHtml(t.url || '')}" placeholder="粘贴课程 / 作业地址，回车保存" spellcheck="false" title="这个用户固定打开的地址。点「运行」时第一个去这里，之后页面怎么跳都不变；当前实际地址看窗口下方" />
         <button class="go" data-go="${t.id}">前往</button>
       </div>
       <div class="line2">
@@ -1122,7 +1122,9 @@ function updateTaskNode(node, t) {
   }
   const addr = node.querySelector('.task-addr');
   if (addr && document.activeElement !== addr) {
-    const v = t.pageUrl || t.lastUrl || t.url || '';
+    // 这里只显示「固定入口地址」，不跟 pageUrl 走。
+    // 否则用户一边答题页面一边跳章节，这个框会不停闪，还容易被误以为地址被改了。
+    const v = t.url || '';
     if (addr.value !== v) addr.value = v;
   }
   const acts = node.querySelector('.acts');
@@ -1569,7 +1571,7 @@ el('taskList').addEventListener('focusout', (e) => {
   const next = e.relatedTarget;
   if (next && next.dataset && next.dataset.go === input.dataset.addr) return;
   const t = state.users.find((x) => x.id === input.dataset.addr);
-  const real = t ? t.pageUrl || t.lastUrl || t.url || '' : '';
+  const real = t ? t.url || '' : '';
   if (t && input.value !== real) input.value = real;
 });
 
