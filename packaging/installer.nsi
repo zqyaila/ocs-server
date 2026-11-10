@@ -6,7 +6,7 @@ SetCompressor /SOLID lzma
 SetCompressorDictSize 64
 
 !define APP_NAME "OCS 网课助手"
-!define APP_VER "2.8.1"
+!define APP_VER "2.8.2"
 !define APP_EXE "OCS网课助手.exe"
 !define APP_PUBLISHER "OCS"
 !define APP_REGKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\OCS-Server"
@@ -20,7 +20,7 @@ RequestExecutionLevel user
 ShowInstDetails show
 ShowUninstDetails show
 
-VIProductVersion "2.8.1.0"
+VIProductVersion "2.8.2.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "FileDescription" "${APP_NAME} 安装程序"
 VIAddVersionKey "FileVersion" "${APP_VER}"

@@ -19,7 +19,7 @@
 
 只想在自己的 Windows 电脑上用，不需要命令行，也不需要装 Node：
 
-1. 下载 `OCS-Setup-2.8.1.exe`（24MB）；
+1. 下载 `OCS-Setup-2.8.2.exe`（24MB）；
 2. 双击 → 下一步 → 完成；
 3. 桌面双击「OCS 网课助手」——**不会弹黑窗口**，图标直接出现在任务栏右下角，浏览器自动打开控制台。
 
@@ -160,6 +160,59 @@ docker compose run --rm ocs node scripts/diagnose.js
 > 1. 把宿主机的 Chrome 挂进容器（见 `Dockerfile` 顶部注释）；
 > 2. 放弃 Docker，改用方式 A。
 
+### 换机器：把账号和登录态搬过去
+
+**v2.8.2 起不用碰文件，两台机器都在控制台里点按钮：**
+
+1. 旧机器：控制台 → **配置** → 最下面「备份与迁移」→ **导出备份**，得到一个 `ocs-backup-*.zip`
+2. 新机器：同样位置 → **导入备份**，选中这个 zip
+3. 导入前会先关掉所有浏览器，完成后页面自动刷新，账号、AI 配置、答题进度都在
+
+包里装了什么、没装什么：
+
+| 带上 | 不带 |
+| --- | --- |
+| `config.json`：账号列表、AI 配置、浏览器/内存设置 | 浏览器缓存（Cache、Code Cache、GPUCache…） |
+| 每个账号的 `profile`：Cookie、Local Storage、IndexedDB | 运行日志 |
+| 每个账号的 `gm-store.json`：脚本设置、答题记录 | 跨进程锁文件（SingletonLock 等） |
+
+缓存不进包，所以 6 个账号通常只有几十 MB，而不是几百 MB。
+
+**旧数据不会直接删。** 导入前会把原来的 `config.json` 和 `users/` 挪到
+`data.bak-<时间>/`（只保留最近 2 份）。导错了把里面的东西放回去即可。
+
+**访问令牌、端口、监听地址不会被覆盖。** 这三项属于「这台机器怎么访问」，
+服务器上设了 token，照搬过来会让本机控制台直接 401，看着像导入坏了，所以保留本机的。
+
+#### 版本低于 2.8.2，没有导出按钮：手工拷目录
+
+```bash
+# 旧机器：先停服务，再打包（不要带 node_modules）
+sudo systemctl stop ocs-server
+tar -czf ocs-data.tar.gz -C /root/ocs-server data
+```
+
+把 `ocs-data.tar.gz` 下载到新机器，解压后整个 `data` 目录覆盖到安装目录下的 `app\data`：
+
+```
+%LOCALAPPDATA%\Programs\OCS\app\data
+```
+
+覆盖前先在托盘图标上 **右键 → 退出**，否则 Windows 会提示文件被占用。
+
+覆盖过去后有两处会自动修正，不用手改：
+
+- `ocs.scriptPath`（旧机器上的 `/root/ocs-server/userscript/...`）→ 换成本机脚本；
+- `browser.executablePath`（如 `/usr/bin/chromium`）→ 找不到就清空，改为自动探测 Edge。
+
+#### 登录态跨系统会失效（重要）
+
+Chromium 的 Cookie 在 Linux 上用固定密钥加密，在 Windows 上走 DPAPI，两边的密文互不通用。
+所以 **Linux → Windows** 迁移后，账号、配置、进度都在，但打开页面多半还是未登录状态。
+
+不用怀疑导入失败，重新扫码登录一次就好，之后一直有效。Windows → Windows、Linux → Linux 没这个问题。
+导入时如果检测到跨系统，控制台会明确提示这一点。
+
 ### 升级已有部署
 
 **不需要全部替换，也千万不要删掉 `data/` 目录**——里面是配置、cookie、登录态和浏览器 profile，删了要重新扫码登录。包内不含 `data/`，所以直接覆盖解压是安全的：
@@ -174,7 +227,7 @@ sudo systemctl start ocs-server
 升级成功的标志是启动日志里带版本号：
 
 ```
-控制台已启动： http://<本机局域网IP>:8899  (v2.7.1)
+控制台已启动： http://<本机局域网IP>:8899  (v2.8.2)
 用户 3 个：张三、李四、王五
 ```
 
@@ -206,6 +259,21 @@ sudo systemctl start ocs-server
 
 另外修了一个会让答题流程中断的问题：`waitFor` 超时后原本直接 `reject`，
 调用方没 catch 就会把整个答题循环打断；现在未指定错误文案时改为「打日志并继续」，指定了才抛错。
+
+#### v2.8.2：备份导出 / 导入，换机器不用碰文件
+
+**配置弹窗最下面多了「备份与迁移」**：旧机器点「导出备份」得到 zip，新机器点「导入备份」选它，
+账号、登录态、AI 配置、答题进度一起过去。
+
+- 导出排除缓存目录，6 个账号的包通常只有几十 MB；
+- 导入前自动关掉所有浏览器（不然 Windows 上文件被占用，写不进去）；
+- 旧数据挪到 `data.bak-<时间>/`，只留最近 2 份；
+- 本机的 token / 端口 / 监听地址**不被覆盖**，避免导入后控制台 401；
+- 跨系统导入会提示「Cookie 无法解密，需要重新登录一次」；
+- 自动修正 `ocs.scriptPath` 和 `browser.executablePath`：指向别的机器的路径会被换成本机的
+  （以前手动拷 `data` 到 Windows，会因为脚本路径不存在直接启动失败）。
+
+zip 读写是自己实现的（store + deflate），不引第三方依赖，安装包体积不变。
 
 #### v2.8.1：后台静默运行 + 地址栏固定入口
 

@@ -775,6 +775,23 @@
         <div class="hint" style="margin-top:5px">到点让每个页面做一次 GC，后台页顺带释放渲染缓存</div>
       </div>
 
+      <div class="divider"></div>
+
+      <p class="section-title">备份与迁移</p>
+      <div class="field">
+        <label>账号 + 登录态 + AI 配置，打包成一个 zip</label>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+          <button id="btnBackupExport">导出备份</button>
+          <button id="btnBackupImport">导入备份</button>
+          <span id="backupHint" class="hint"></span>
+        </div>
+        <div class="hint" style="margin-top:6px">
+          换电脑、重装系统时用：服务器上导出 → 这里导入，账号和登录态原样带过来。
+          不含浏览器缓存，所以文件不大。导入会覆盖现有账号，旧数据留在 <code>data.bak-*</code> 里。
+        </div>
+      </div>
+      <input type="file" id="backupFile" accept=".zip,application/zip" style="display:none" />
+
     </div>
     <div class="footer">
       <button class="primary" id="btnSave">保存配置</button>
@@ -1782,6 +1799,59 @@ el('btnSave').onclick = async () => {
     refresh();
   } catch (e) {
     el('saveHint').textContent = '保存失败：' + e.message;
+  }
+};
+
+/* ---------------- 备份与迁移 ---------------- */
+
+el('btnBackupExport').onclick = () => {
+  const hint = el('backupHint');
+  hint.textContent = '正在打包，完成后会自动开始下载…';
+  // 直接改 location 会被浏览器当成一次导航；用隐藏的 a 触发下载，页面不动
+  const a = document.createElement('a');
+  a.href = '/api/backup/export';
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => (hint.textContent = ''), 15000);
+};
+
+el('btnBackupImport').onclick = () => el('backupFile').click();
+
+el('backupFile').onchange = async () => {
+  const input = el('backupFile');
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const hint = el('backupHint');
+
+  const ok = confirm(
+    '导入会覆盖当前所有账号和登录态（包括 AI 配置）。\n' +
+      '旧数据会自动备份到 data.bak-<时间>/，随时能换回来。\n\n' +
+      '导入前会先关掉所有浏览器，确定继续？'
+  );
+  if (!ok) {
+    input.value = '';
+    return;
+  }
+
+  hint.textContent = '正在导入 ' + (file.size / 1048576).toFixed(1) + 'MB，浏览器会先被关掉…';
+  try {
+    const res = await fetch('/api/backup/import', { method: 'POST', body: file });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || res.statusText);
+    const tip = j.crossPlatform
+      ? `\n\n注意：这份备份来自 ${j.fromPlatform}，浏览器登录态（Cookie）无法跨系统解密。` +
+        '账号、AI 配置、答题进度都在，但可能需要重新登录一次。'
+      : '';
+    hint.textContent = `已导入 ${j.users} 个账号（${(j.names || []).join('、') || '无'}），正在刷新…`;
+    setTimeout(() => {
+      if (j.crossPlatform) alert('导入完成。' + tip);
+      location.reload();
+    }, 1200);
+  } catch (e) {
+    hint.textContent = '导入失败：' + e.message;
+    input.value = '';
   }
 };
 

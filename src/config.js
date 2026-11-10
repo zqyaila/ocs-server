@@ -132,6 +132,35 @@ function userStorePath(userId) {
   return path.join(userDir(userId), 'gm-store.json');
 }
 
+/**
+ * 跨平台迁移时的路径校正。
+ *
+ * 从 Linux 服务器把 data 拷到 Windows 安装版，config.json 里的
+ * ocs.scriptPath（/root/ocs-server/userscript/...）和 browser.executablePath
+ * （/usr/bin/chromium）都指向新机器上不存在的位置。
+ * 前者会让启动浏览器时直接抛「用户脚本不存在」，看着像数据坏了；
+ * 后者会让程序去找一个不存在的 Chrome。两种都改成「用本机的」。
+ */
+function fixAbsolutePaths(merged) {
+  let changed = false;
+  const localScript = path.join(ROOT, 'userscript', 'ocs.common.user.js');
+  if (merged.ocs) {
+    const cur = merged.ocs.scriptPath;
+    if ((!cur || !fs.existsSync(cur)) && fs.existsSync(localScript) && cur !== localScript) {
+      merged.ocs.scriptPath = localScript;
+      changed = true;
+    }
+  }
+  if (merged.browser) {
+    const exe = merged.browser.executablePath;
+    if (exe && !fs.existsSync(exe)) {
+      merged.browser.executablePath = ''; // 空 = 自动探测 Edge / Chrome
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 class Config {
   constructor() {
     this.data = this.load();
@@ -157,6 +186,8 @@ class Config {
       // 新增的默认项（例如省资源、加密文字识别方式）写回配置文件，
       // 这样升级后能直接在 config.json 里看到并修改，而不是藏在代码里
       if (lacksKeys(raw, merged)) dirty = true;
+      // 换了机器 / 换了系统：把指不过去的绝对路径改成本机的
+      if (fixAbsolutePaths(merged)) dirty = true;
     } catch (e) {
       merged = JSON.parse(JSON.stringify(DEFAULTS));
       dirty = true;

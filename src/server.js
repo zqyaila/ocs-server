@@ -11,6 +11,7 @@ const { Metrics } = require('./metrics');
 const { CameraHub } = require('./camera');
 const { resolveAi, summarize: summarizeAi, sanitize: sanitizeUserAi } = require('./user-ai');
 const { forceGc, clearProfileCaches, clearPageCaches } = require('./cleanup');
+const { exportBackup, importBackup, MAX_IMPORT_BYTES } = require('./backup');
 const { version: PKG_VERSION } = require('../package.json');
 
 const config = new Config();
@@ -282,6 +283,25 @@ function readBody(req) {
         resolve({});
       }
     });
+  });
+}
+
+/** 上传备份用：readBody 是拼字符串的，二进制走这个 */
+function readBinary(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on('data', (c) => {
+      total += c.length;
+      if (total > maxBytes) {
+        reject(new Error('too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
   });
 }
 
@@ -686,6 +706,116 @@ const server = http.createServer(async (req, res) => {
           (diskFreed ? `，磁盘 ${Math.round(diskFreed / 1048576)}MB` : '')
       );
       return send(res, 200, { ok: true, freedMB, beforeMB, afterMB, details });
+    }
+
+    /* ---------------- 备份 / 迁移 ---------------- */
+    /**
+     * 导出：把 config.json + 每个用户的 profile / gm-store 打成一个 zip。
+     * 缓存目录（Cache / Code Cache / GPUCache …）不进包，体积能小一个数量级。
+     */
+    if (pathname === '/api/backup/export' && method === 'GET') {
+      try {
+        const busy = users.filter((u) => {
+          const rt = runtimes.get(u.id);
+          return rt && rt.host && rt.host.running;
+        }).length;
+        if (busy) {
+          logger.warn(`[备份] 有 ${busy} 个账号的浏览器正在运行，正在打包它当前的登录态（建议跑完再导出）`);
+        }
+        const out = exportBackup(DATA_DIR, config);
+        const ts = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13).replace('T', '-');
+        const name = 'ocs-backup-' + ts + '.zip';
+        logger.info(
+          `[备份] 已导出：${out.manifest.users} 个用户、${out.count} 个文件、${Math.round(out.buffer.length / 1048576)}MB`
+        );
+        res.writeHead(200, {
+          'Content-Type': 'application/zip',
+          'Content-Disposition': 'attachment; filename="' + name + '"',
+          'Content-Length': out.buffer.length,
+          'Cache-Control': 'no-store'
+        });
+        return res.end(out.buffer);
+      } catch (e) {
+        logger.error('[备份] 导出失败：' + e.message);
+        return send(res, 500, { error: '导出失败：' + e.message });
+      }
+    }
+
+    /**
+     * 导入：接收 zip 覆盖 config.json 与 users/。
+     * 导入前必须把所有浏览器关掉，否则文件被占用，Windows 上会 EBUSY。
+     * 旧数据会留在 data.bak-<时间>/ 里，导错了还能拿回来。
+     */
+    if (pathname === '/api/backup/import' && method === 'POST') {
+      let buf;
+      try {
+        buf = await readBinary(req, MAX_IMPORT_BYTES);
+      } catch (e) {
+        return send(res, 413, { error: '备份文件太大（上限 512MB），请直接拷贝 data 目录' });
+      }
+      if (!buf.length) return send(res, 400, { error: '没有收到文件内容' });
+
+      for (const u of users) {
+        try {
+          await stopUser(u);
+        } catch (e) {}
+      }
+      runtimes.clear();
+
+      // 访问令牌 / 端口 / 监听地址是「这台机器怎么访问」，不该跟着账号数据走。
+      // 服务器上设了 token 的话，照搬过来会让本机控制台直接 401，看着像导入坏了。
+      const localServer = JSON.parse(JSON.stringify(config.data.server || {}));
+
+      let result;
+      try {
+        result = importBackup(buf, DATA_DIR);
+      } catch (e) {
+        logger.error('[备份] 导入失败：' + e.message);
+        return send(res, 400, { error: '导入失败：' + e.message });
+      }
+
+      // 重新读一遍配置：脚本路径 / 浏览器路径指向别的机器时会被换成本机的
+      try {
+        config.data = config.load();
+        if (localServer && Object.keys(localServer).length) {
+          config.data.server = Object.assign({}, config.data.server, localServer);
+          config.save();
+        }
+      } catch (e) {
+        logger.error('[备份] 配置重载失败：' + e.message);
+      }
+      const next = config.users.map((u) => ({
+        ...u,
+        status: u.lastStatus === 'closed' || u.lastStatus === 'stopped' ? u.lastStatus : 'idle'
+      }));
+      users.length = 0;
+      users.push(...next);
+
+      logger.info(
+        `[备份] 已导入 ${next.length} 个用户、${result.files} 个文件` +
+          (result.backup ? `，原数据已备份到 ${path.basename(result.backup)}` : '')
+      );
+
+      // Chromium 的 Cookie 在 Linux 上用固定密钥、Windows 上走 DPAPI，两边密文互不通用。
+      // 跨系统迁移时登录态基本解不开，得让用户知道要重新扫一次码，而不是以为导入坏了。
+      const from = result.manifest && result.manifest.platform;
+      const crossPlatform = !!(from && from !== process.platform);
+      if (crossPlatform) {
+        logger.warn(
+          `[备份] 备份来自 ${from}，当前是 ${process.platform}：` +
+            '账号和配置都过来了，但浏览器 Cookie 无法跨系统解密，可能需要重新登录一次'
+        );
+      }
+
+      return send(res, 200, {
+        ok: true,
+        users: next.length,
+        files: result.files,
+        backup: result.backup ? path.basename(result.backup) : '',
+        names: next.map((u) => u.name),
+        fromPlatform: from || '',
+        crossPlatform
+      });
     }
 
     /* ---------------- 用户 ---------------- */
