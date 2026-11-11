@@ -267,7 +267,7 @@
     display:flex;align-items:center;justify-content:center;overflow:hidden;
     border-bottom:1px solid var(--line-soft);
   }
-  .screen-wrap img{width:100%;height:100%;object-fit:contain;display:block;cursor:crosshair}
+  .screen-wrap img{width:100%;height:100%;object-fit:contain;display:block;cursor:crosshair;-webkit-user-drag:none;user-select:none}
   .screen-wrap .placeholder{
     color:var(--faint);font-size:12.5px;text-align:center;padding:24px;line-height:1.9
   }
@@ -282,6 +282,13 @@
     border-color:rgba(255,255,255,.1);color:var(--text-2)
   }
   .screen-tools button:hover{background:rgba(32,37,42,.96);color:#fff;border-color:rgba(255,255,255,.18)}
+  /* 按住是「持续状态」：橙色表示左键还压在远程页面上，再点一次才松开 */
+  .screen-tools button.hold.on,.lb-bar button.hold.on{
+    background:#b45309!important;border-color:#f59e0b!important;color:#fff!important
+  }
+  .screen-tools button.hold.armed,.lb-bar button.hold.armed{
+    background:rgba(120,53,15,.9)!important;border-color:#f59e0b!important;color:#fcd34d!important
+  }
   .screen-badge{
     position:absolute;left:10px;top:10px;font-size:11px;padding:3px 9px;
     border-radius:6px;background:rgba(16,18,21,.8);backdrop-filter:blur(8px);
@@ -355,11 +362,12 @@
     display:none;align-items:center;justify-content:center;
   }
   .lightbox.show{display:flex}
-  .lightbox img{width:100%;height:100%;object-fit:contain;cursor:crosshair;display:block}
+  .lightbox img{width:100%;height:100%;object-fit:contain;cursor:crosshair;display:block;-webkit-user-drag:none;user-select:none}
   #toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,8px);background:rgba(28,32,38,.97);color:#e6eaef;
     border:1px solid rgba(255,255,255,.13);border-radius:8px;padding:9px 15px;font-size:13px;line-height:1.4;
     opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;z-index:9999;max-width:70vw}
   #toast.show{opacity:1;transform:translate(-50%,0)}
+  #toast.above{bottom:82px}
   .lb-bar{
     position:absolute;left:50%;bottom:20px;transform:translateX(-50%);
     display:flex;align-items:center;gap:7px;padding:7px 8px;
@@ -566,6 +574,7 @@
       <div class="screen-tools">
         <button id="btnShot">刷新</button>
         <button id="btnDbl" title="对上一次点击的位置双击；没点过就双击页面中心">双击</button>
+        <button id="btnHold" class="hold" title="按住左键不放：滑块验证码先点这里，在画面上拖动，最后点「松开」">按住</button>
         <button id="btnExpand">放大</button>
       </div>
     </div>
@@ -598,11 +607,12 @@
 
 <!-- 放大层 -->
 <div class="lightbox" id="lightbox">
-  <img id="lbImg" alt="" />
-  <div class="lb-tip">滚轮 = 滚动页面　·　单击 = 点击页面　·　Esc 退出</div>
+  <img id="lbImg" alt="" draggable="false" />
+  <div class="lb-tip">单击 = 点击　·　滚轮 = 滚动　·　按住可拖滑块　·　Esc 退出</div>
   <div class="lb-bar">
     <span class="where" id="lbWhere">—</span>
     <button id="lbDbl" title="双击上一次点击的位置，没点过则双击页面中心">双击</button>
+    <button id="lbHold" class="hold" title="按住左键不放：滑块验证码先点这里，在画面上拖动，最后点「松开」">按住</button>
     <button id="lbReload">刷新</button>
     <button class="primary" id="lbClose">关闭</button>
   </div>
@@ -1330,7 +1340,10 @@ function refreshScreen(force) {
 function toPage(clientX, clientY, img) {
   const cfg = state.browser;
   const rect = img.getBoundingClientRect();
+  // 图还没加载完时 rect 是 0，除下去会得到 Infinity，后面的点击就全乱了
+  if (!rect.width || !rect.height) return { x: 0, y: 0, inside: false };
   const scale = Math.min(rect.width / cfg.width, rect.height / cfg.height);
+  if (!Number.isFinite(scale) || scale <= 0) return { x: 0, y: 0, inside: false };
   const renderW = cfg.width * scale;
   const renderH = cfg.height * scale;
   const offX = (rect.width - renderW) / 2;
@@ -1345,6 +1358,8 @@ let lastPoint = null;
 
 function clickAt(clientX, clientY, img) {
   if (!state || !state.browser.running) return;
+  // 按住拖动中：一次 click 会自带 down+up，把正在进行的拖动拆成两截
+  if (holdState !== 'idle') return;
   // 只对选中的用户发点击；否则服务端会回退到别的用户，点到不该点的地方
   const focus = state.users.find((t) => t.id === selectedTaskId);
   if (!focus || !focus.pageUrl) { toast('这个用户还没有打开页面'); return; }
@@ -1356,6 +1371,7 @@ function clickAt(clientX, clientY, img) {
 
 function dblclickAt(clientX, clientY, img) {
   if (!state || !state.browser.running) return;
+  if (holdState !== 'idle') return;
   const focus = state.users.find((t) => t.id === selectedTaskId);
   if (!focus || !focus.pageUrl) { toast('这个用户还没有打开页面'); return; }
   const p = toPage(clientX, clientY, img);
@@ -1387,6 +1403,118 @@ function wheelAt(e) {
   setTimeout(() => (wheelBusy = false), 110);
 }
 
+/* ---------------- 按住 / 松开（滑块验证码） ----------------
+ * 滑块要的轨迹是 mousedown → 一串带按键状态的 mousemove → mouseup，
+ * 普通 click 按下就抬，滑块根本不动。所以拆成四步：
+ *   1. 点「按住」→ 进入按住模式（armed，还没有落点）
+ *   2. 在滑块上按下 → down 落在你按下的那个点，移动即 move（40ms 节流）
+ *   3. 本地抬手 → 远程继续保持按住（latched），拖到终点可以先停住确认
+ *   4. 点「松开」→ up
+ * 起点用真实落点而不是光标位置：鼠标移向按钮的途中会把光标带偏，
+ * 用它当起点会把滑块拽歪。
+ */
+let holdState = 'idle'; // idle | armed | down | latched
+let dragPoint = null;   // 最后一次拖到的页面坐标，松开时用它落点
+let moveTimer = null;
+let latchTimer = null;
+
+// down / move / up 必须按顺序到服务端：串成一条链，
+// 否则第一帧 move 可能抢在 down 前面，页面收到的是「没按键的移动」，滑块不跟手
+let inputChain = Promise.resolve();
+function queueInput(body) {
+  inputChain = inputChain.then(() => sendInput(body)).catch(() => {});
+  return inputChain;
+}
+
+function holdBtns() {
+  return [el('btnHold'), el('lbHold')];
+}
+
+function paintHold() {
+  const active = holdState === 'down' || holdState === 'latched';
+  const armed = holdState === 'armed';
+  for (const b of holdBtns()) {
+    if (!b) continue;
+    b.classList.toggle('on', active);
+    b.classList.toggle('armed', armed);
+    b.textContent = active ? '松开' : armed ? '按住中' : '按住';
+    b.title = active
+      ? '松开左键，结束这次拖动'
+      : armed
+        ? '在滑块上按下并拖动，结束后点「松开」'
+        : '按住左键不放：滑块验证码点这里，然后在画面上按下滑块拖动';
+  }
+}
+
+function focusUserNow() {
+  return state ? state.users.find((t) => t.id === selectedTaskId) : null;
+}
+
+/** 第一步：进入按住模式，等用户在画面上落点 */
+function startHold() {
+  if (!state || !state.browser.running) { toast('浏览器还没启动'); return; }
+  const u = focusUserNow();
+  if (!u || !u.pageUrl) { toast('这个用户还没有打开页面'); return; }
+  holdState = 'armed';
+  paintHold();
+  toast('在滑块上按住拖动，拖完再点松开');
+}
+
+/** 第二步：落点处真正按下 */
+async function holdBeginAt(clientX, clientY, img) {
+  if (holdState !== 'armed' || !img) return;
+  const p = toPage(clientX, clientY, img);
+  if (!p.inside) return;
+  holdState = 'down';
+  dragPoint = { x: p.x, y: p.y };
+  lastPoint = { x: p.x, y: p.y };
+  paintHold();
+  await queueInput({ type: 'down', x: p.x, y: p.y });
+}
+
+/** 第三步：本地抬手，但远程先不松，等用户点「松开」 */
+function holdLatch() {
+  if (holdState !== 'down') return;
+  holdState = 'latched';
+  paintHold();
+  toast('已按住，拖完点松开');
+  // 拖完忘了点「松开」的话，远程页面会一直以为鼠标按着，15 秒后自动收尾
+  clearTimeout(latchTimer);
+  latchTimer = setTimeout(() => endHold(true), 15000);
+}
+
+/** 第四步：松开 */
+async function endHold(silent) {
+  if (holdState === 'idle') return;
+  const was = holdState;
+  holdState = 'idle';
+  paintHold();
+  if (moveTimer) { clearTimeout(moveTimer); moveTimer = null; }
+  if (latchTimer) { clearTimeout(latchTimer); latchTimer = null; }
+  // armed 只是取消，没按下就不用发 up
+  if (was !== 'down' && was !== 'latched') return;
+  const body = { type: 'up' };
+  if (dragPoint) { body.x = dragPoint.x; body.y = dragPoint.y; }
+  await queueInput(body);
+  if (!silent) toast('已松开');
+}
+
+/** 拖动：只发最新位置，避免每帧一个请求堆积 */
+function dragTo(clientX, clientY, img) {
+  if (holdState !== 'down' || !img) return;
+  const p = toPage(clientX, clientY, img);
+  if (!p.inside) return;
+  dragPoint = { x: p.x, y: p.y };
+  lastPoint = dragPoint;
+  if (moveTimer) return;
+  moveTimer = setTimeout(() => {
+    moveTimer = null;
+    if (holdState === 'down' && dragPoint) {
+      queueInput({ type: 'move', x: dragPoint.x, y: dragPoint.y });
+    }
+  }, 40);
+}
+
 let toastTimer = null;
 function toast(msg) {
   let n = document.getElementById('toast');
@@ -1396,6 +1524,8 @@ function toast(msg) {
     document.body.appendChild(n);
   }
   n.textContent = msg;
+  // 放大层的工具栏在底部，toast 继续贴底会把「松开」按钮挡住
+  n.classList.toggle('above', lightboxOpen);
   n.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => n.classList.remove('show'), 2200);
@@ -1416,10 +1546,26 @@ function openLightbox() {
 }
 
 function closeLightbox() {
+  // 关掉放大层时左键还压在远程页面上，会一直按着，先把状态收干净
+  endHold(true);
   lightboxOpen = false;
   el('lightbox').classList.remove('show');
   refreshScreen(true);
 }
+
+el('screenWrap').addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || e.target.closest('.screen-tools')) return;
+  if (holdState === 'armed') e.preventDefault(); // 别让浏览器把截图 img 当成可拖拽元素
+  const img = e.currentTarget.querySelector('img');
+  if (img) holdBeginAt(e.clientX, e.clientY, img);
+});
+
+el('screenWrap').addEventListener('mousemove', (e) => {
+  if (e.target.closest('.screen-tools')) return;
+  dragTo(e.clientX, e.clientY, e.currentTarget.querySelector('img'));
+});
+
+el('screenWrap').addEventListener('mouseup', () => holdLatch());
 
 el('screenWrap').addEventListener('click', (e) => {
   if (e.target.closest('.screen-tools')) return;
@@ -1454,19 +1600,33 @@ el('lightbox').addEventListener('wheel', (e) => {
   wheelAt(e);
 }, { passive: false });
 
-/* 触摸：单指上下滑 = 滚动页面，轻点 = 点击 */
+/* 触摸：单指上下滑 = 滚动页面，轻点 = 点击；按住模式下 = 拖滑块 */
 let touchStart = null;
 let touchMoved = false;
 
 el('lightbox').addEventListener('touchstart', (e) => {
   if (e.touches.length !== 1) { touchStart = null; return; }
-  touchStart = { y: e.touches[0].clientY, x: e.touches[0].clientX };
+  const t = e.touches[0];
+  // 已经进入按住模式：手指落在哪里就在哪里按下，后续滑动全部算拖动
+  if (holdState !== 'idle') {
+    e.preventDefault();
+    touchStart = null;
+    touchMoved = true;
+    holdBeginAt(t.clientX, t.clientY, el('lbImg'));
+    return;
+  }
+  touchStart = { y: t.clientY, x: t.clientX };
   touchMoved = false;
-}, { passive: true });
+}, { passive: false });
 
 el('lightbox').addEventListener('touchmove', (e) => {
-  if (!touchStart || e.touches.length !== 1) return;
   const t = e.touches[0];
+  if (holdState === 'down') {
+    e.preventDefault();
+    if (t) dragTo(t.clientX, t.clientY, el('lbImg'));
+    return;
+  }
+  if (!touchStart || e.touches.length !== 1 || !t) return;
   if (Math.abs(t.clientY - touchStart.y) > 12 || Math.abs(t.clientX - touchStart.x) > 12) {
     touchMoved = true;
   }
@@ -1484,15 +1644,48 @@ el('lightbox').addEventListener('touchmove', (e) => {
 }, { passive: false });
 
 el('lightbox').addEventListener('touchend', () => {
+  holdLatch(); // 手指离开屏幕：远程先保持按住，等用户点「松开」
   touchStart = null;
   // 让随后的 click 判断到 touchMoved
   setTimeout(() => (touchMoved = false), 60);
 }, { passive: true });
 
+el('lightbox').addEventListener('mousedown', (e) => {
+  if (e.button !== 0 || e.target.closest('.lb-bar')) return;
+  if (holdState === 'armed') e.preventDefault();
+  holdBeginAt(e.clientX, e.clientY, el('lbImg'));
+});
+
+el('lightbox').addEventListener('mousemove', (e) => {
+  if (e.target.closest('.lb-bar')) return;
+  dragTo(e.clientX, e.clientY, el('lbImg'));
+});
+
+el('lightbox').addEventListener('mouseup', (e) => {
+  if (e.target.closest('.lb-bar')) return;
+  holdLatch();
+});
+
+/* 小窗里也支持手指拖滑块：按住模式下不滚动页面，全部转发成 move */
+el('screenWrap').addEventListener('touchstart', (e) => {
+  if (holdState === 'idle' || e.touches.length !== 1) return;
+  e.preventDefault();
+  holdBeginAt(e.touches[0].clientX, e.touches[0].clientY, el('screenWrap').querySelector('img'));
+}, { passive: false });
+
+el('screenWrap').addEventListener('touchmove', (e) => {
+  if (holdState !== 'down' || e.touches.length !== 1) return;
+  e.preventDefault();
+  dragTo(e.touches[0].clientX, e.touches[0].clientY, el('screenWrap').querySelector('img'));
+}, { passive: false });
+
 el('btnExpand').onclick = openLightbox;
 el('lbClose').onclick = closeLightbox;
 el('lbDbl').onclick = doubleClickLast;
+el('btnHold').onclick = () => (holdState === 'idle' ? startHold() : endHold());
+el('lbHold').onclick = () => (holdState === 'idle' ? startHold() : endHold());
 el('lbReload').onclick = () => {
+  endHold(true);
   sendInput({ type: 'reload' }).catch(() => {});
 };
 
@@ -1507,8 +1700,11 @@ el('addr').addEventListener('keydown', (e) => {
   }
   if (e.key === 'Escape') el('addr').blur();
 });
-el('btnBack').onclick = () => sendInput({ type: 'back' }).then(() => setTimeout(refresh, 600)).catch(() => {});
-el('btnReload').onclick = () => sendInput({ type: 'reload' }).catch(() => {});
+el('btnBack').onclick = () => { endHold(true); sendInput({ type: 'back' }).then(() => setTimeout(refresh, 600)).catch(() => {}); };
+el('btnReload').onclick = () => {
+  endHold(true);
+  sendInput({ type: 'reload' }).catch(() => {});
+};
 // 点了在新标签打开的链接后，画面会自动跟过去；这个按钮用来切回原来的页面
 el('btnTab').onclick = async () => {
   if (!selectedTaskId) return;
@@ -1564,6 +1760,7 @@ el('taskList').addEventListener('click', (e) => {
   const card = e.target.closest('.task');
   if (!card) return;
   if (e.target.closest('button') || e.target.closest('input')) return;
+  endHold(true); // 换人看画面，别把左键按在别人页面上
   selectedTaskId = card.dataset.id;
   refresh();
   refreshScreen(true);

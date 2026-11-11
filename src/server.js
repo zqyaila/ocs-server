@@ -1043,12 +1043,20 @@ const server = http.createServer(async (req, res) => {
       const r = runtimeFor(user).runner;
       if (body.type === 'click') await r.click(body.x, body.y);
       else if (body.type === 'dblclick') await r.dblclick(body.x, body.y);
+      // 滑块验证码：down → 多次 move → up，由控制台的两个按钮驱动
+      else if (body.type === 'down') await r.mouseDown(body.x, body.y);
+      else if (body.type === 'move') await r.mouseMove(body.x, body.y);
+      else if (body.type === 'up') await r.mouseUp(body.x, body.y);
       else if (body.type === 'type') await r.type(body.text || '');
       else if (body.type === 'key') await r.press(body.key || 'Enter');
-      else if (body.type === 'goto') await r.goto(body.url);
+      // 换页前先放开左键，否则新页面一加载就处于「鼠标按着」的状态
+      else if (body.type === 'goto') { r.releaseHold(); await r.goto(body.url); }
       else if (body.type === 'wheel') await r.scroll(body.deltaY, body.x, body.y);
-      else if (body.type === 'back') await r.back();
-      else if (body.type === 'reload' && r.page) await r.page.reload().catch(() => {});
+      else if (body.type === 'back') { r.releaseHold(); await r.back(); }
+      else if (body.type === 'reload') {
+        r.releaseHold();
+        if (r.page) await r.page.reload().catch(() => {});
+      }
       return send(res, 200, { ok: true, url: r.pageUrl() });
     }
 

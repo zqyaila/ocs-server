@@ -32,13 +32,16 @@ function stripEnc(url) {
  * 平台把页面挡在门外的几种情况。这些页面没有视频，守护循环只会干等，
  * 所以单独识别：能继续等的（登录）就等，不能等的（enc 失效、无权限）直接报错。
  */
+// 登录页地址单独抽出来：判定「这一页是不是刷课页」时也用得到
+const LOGIN_URL_RE = /passport2\.chaoxing\.com|\/login\b|login\.chaoxing|\/passport\//i;
+
 const PAGE_GATES = [
   {
     type: 'login',
     title: '需要登录',
     fatal: false,
     match: (url, text) =>
-      /passport2\.chaoxing\.com|\/login\b|login\.chaoxing|\/passport\//i.test(url) ||
+      LOGIN_URL_RE.test(url) ||
       /登录已失效|请重新登录|登录超时|该账号已在别处登录|请登录后继续/.test(text),
     tip: '登录态无效或未登录。请在本账号的画面里完成登录（扫码或账号密码），登录成功后会自动继续，不用重启任务。'
   },
@@ -84,6 +87,8 @@ class TaskRunner extends EventEmitter {
     this._boundPages = new WeakSet();
     this._pageStack = [];
     this._opening = null;
+    // 是否正按着左键（滑块验证码）；换页 / 停止时要记得放开
+    this.holding = false;
   }
 
   addLog(task, level, message) {
@@ -150,6 +155,8 @@ class TaskRunner extends EventEmitter {
   }
 
   async cleanup() {
+    // 任务结束前先松开左键，否则远程页面会残留一个永不放开的 mousedown
+    this.releaseHold();
     if (this.watchdog) {
       clearTimeout(this.watchdog);
       this.watchdog = null;
@@ -808,6 +815,10 @@ class TaskRunner extends EventEmitter {
       );
     }
 
+    // 入口地址先留一份：pin 判断和下面的「固定当前刷课页」都要用原始入口，
+    // 不能在 capture 改过 task.url 之后再读
+    const entryUrl = task.url;
+
     if (cfg.ocs.autoStart) {
       await sleep(3000);
       const clicked = await this.clickByText(task, START_TEXTS);
@@ -819,10 +830,23 @@ class TaskRunner extends EventEmitter {
       await sleep(1500);
       const cur = (this.page && !this.page.isClosed() ? this.page : page).url();
       // 页面还停在入口地址 → 锁入口；已被「开始学习」带走 → 锁新页面
-      task.pinUrl = this.isSamePage(cur, task.url) ? task.url : cur;
+      task.pinUrl = this.isSamePage(cur, entryUrl) ? entryUrl : cur;
       task.pinDrift = 0;
       this.addLog(task, 'info', `已锁定当前页面：${task.pinUrl}`);
     }
+
+    // 脚本已经开始，页面正从入口往刷课页跳。这里不等它，后台盯着地址：
+    // 一旦稳定在某个非入口、非登录页，就把这条地址回写成任务地址，
+    // 左侧链接栏从此固定显示实际在刷的那一页，下次运行直接从这里进
+    this.captureRunUrl(task, entryUrl)
+      .then((cur) => {
+        if (!cur || this.stopped || cur === task.url) return;
+        task.url = cur;
+        task.error = null;
+        this.emit('task-url', task);
+        this.addLog(task, 'info', `已把当前刷课页固定为任务地址：${cur}`);
+      })
+      .catch(() => {});
 
     this.addLog(
       task,
@@ -974,6 +998,51 @@ class TaskRunner extends EventEmitter {
     return true;
   }
 
+  /**
+   * 按住左键不放（滑块验证码）。
+   *
+   * 滑块验证码的判定逻辑看的是 mousedown → 带按键状态的 mousemove → mouseup
+   * 这一整条轨迹，普通的 click 是「瞬间按下又抬起」，拖不动滑块。
+   * 所以拆成 down / move / up 三段，由控制台的「按住」「松开」按钮驱动。
+   */
+  async mouseDown(x, y) {
+    if (!this.page || this.page.isClosed()) return false;
+    // 先移到起点再按下：只在目标元素上触发 mousedown，页面记录的起点才对
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      await this.page.mouse.move(x, y).catch(() => {});
+    }
+    await this.page.mouse.down().catch(() => {});
+    this.holding = true;
+    return true;
+  }
+
+  /** 拖动过程中的光标移动；按下状态由 Playwright 自己维护，move 会带上 buttons=1 */
+  async mouseMove(x, y) {
+    if (!this.page || this.page.isClosed()) return false;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    await this.page.mouse.move(x, y).catch(() => {});
+    return true;
+  }
+
+  async mouseUp(x, y) {
+    this.holding = false;
+    if (!this.page || this.page.isClosed()) return false;
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      await this.page.mouse.move(x, y).catch(() => {});
+    }
+    await this.page.mouse.up().catch(() => {});
+    return true;
+  }
+
+  /** 页面被关掉 / 换页时兜底放开左键，不然远程页面会一直以为鼠标按着 */
+  releaseHold() {
+    if (!this.holding) return;
+    this.holding = false;
+    if (this.page && !this.page.isClosed()) {
+      this.page.mouse.up().catch(() => {});
+    }
+  }
+
   async type(text) {
     if (!this.page || this.page.isClosed()) return false;
     await this.page.keyboard.type(text, { delay: 30 });
@@ -1021,6 +1090,63 @@ class TaskRunner extends EventEmitter {
     } catch (e) {
       return a === b;
     }
+  }
+
+  /**
+   * 脚本真正开始刷课后，把当前地址回写成任务地址。
+   *
+   * 用户填的入口一般是课程目录 / 章节列表，点「开始学习」之后页面会跳到播放页。
+   * 把这个地址固定下来有两个好处：左侧链接栏显示的就是实际在刷的那一页，
+   * 下次点「运行」也直接从播放页进，不用再从目录点一遍。
+   *
+   * 只在「已经离开入口 + 连续 1 秒没再变 + 不是登录页」时才认，
+   * 否则会把跳转途中的空白页、或登录失效后的登录页钉成入口地址。
+   */
+  async captureRunUrl(task, entryUrl, timeoutMs = 30000) {
+    // 比较时去掉 hash 和末尾斜杠：超星有些页面只是 hash 在变，那不是换页
+    const norm = (u) => {
+      try {
+        const x = new URL(u);
+        x.hash = '';
+        return x.href.replace(/\/+$/, '');
+      } catch (e) {
+        return String(u || '');
+      }
+    };
+    const base = norm(entryUrl);
+    const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 30000);
+    let last = null;
+    let since = 0;
+
+    while (Date.now() < deadline) {
+      if (this.stopped || !this.page || this.page.isClosed()) return null;
+      let cur = null;
+      try {
+        cur = this.page.url();
+      } catch (e) {
+        return null;
+      }
+      // 空白页、错误页、还停在入口、被踢到登录页 —— 都不是要固定的刷课页
+      const skip =
+        !cur ||
+        cur === 'about:blank' ||
+        /^(chrome-error|edge-error):/.test(cur) ||
+        norm(cur) === base ||
+        LOGIN_URL_RE.test(cur);
+      if (skip) {
+        last = null;
+        await sleep(500);
+        continue;
+      }
+      if (cur === last) {
+        if (Date.now() - since >= 1000) return cur;
+      } else {
+        last = cur;
+        since = Date.now();
+      }
+      await sleep(500);
+    }
+    return null;
   }
 
   pageUrl() {
