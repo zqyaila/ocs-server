@@ -1,0 +1,131 @@
+/* 登录 / 注册 / 账号 / 管理后台 共用样式，配色与控制台一致 */
+:root{
+  color-scheme: dark;
+  --bg:#08090a;
+  --surface:#111418;
+  --surface-2:#161a1e;
+  --surface-3:#1d2227;
+  --surface-4:#262c32;
+  --line:#2a3037;
+  --line-strong:#363d45;
+  --text:#e8eaed;
+  --text-2:#b4bcc5;
+  --muted:#7d8792;
+  --faint:#59636d;
+  --accent:#8ea8ff;
+  --accent-soft:rgba(142,168,255,.12);
+  --accent-line:rgba(142,168,255,.28);
+  --ok:#4ade80;
+  --warn:#fbbf24;
+  --err:#f87171;
+  --r-lg:12px; --r-md:9px; --r-sm:6px;
+  --focus:0 0 0 3px rgba(142,168,255,.2);
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  margin:0;
+  background:radial-gradient(1100px 520px at 50% -12%, rgba(142,168,255,.055), transparent 72%), var(--bg);
+  color:var(--text);
+  font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:rgba(142,168,255,.28)}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3,p{margin:0}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+button{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  height:34px;padding:0 13px;border-radius:var(--r-md);
+  background:var(--surface-2);border:1px solid var(--line);
+  color:var(--text-2);font-size:13px;font-weight:500;line-height:1;
+  white-space:nowrap;cursor:pointer;transition:background .14s,border-color .14s,color .14s;
+}
+button:hover{background:var(--surface-3);border-color:var(--line-strong);color:var(--text)}
+button:active{background:var(--surface-4)}
+button:focus-visible{outline:none;box-shadow:var(--focus)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:#eceef1;border-color:#eceef1;color:#0a0b0c;font-weight:600}
+button.primary:hover{background:#fff;border-color:#fff;color:#000}
+button.danger{color:#fca5a5;border-color:rgba(248,113,113,.32);background:rgba(248,113,113,.08)}
+button.danger:hover{background:rgba(248,113,113,.16);border-color:rgba(248,113,113,.5);color:#fecaca}
+button.sm{height:28px;padding:0 10px;font-size:12px;border-radius:var(--r-sm)}
+
+input,select,textarea{
+  width:100%;height:36px;padding:0 10px;border-radius:var(--r-md);
+  background:var(--surface-2);border:1px solid var(--line);color:var(--text);
+  outline:none;transition:border-color .14s,box-shadow .14s;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent-line);box-shadow:var(--focus)}
+input::placeholder{color:var(--faint)}
+label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px}
+.field{margin-bottom:14px}
+.hint{font-size:11.5px;color:var(--faint);line-height:1.5}
+.row{display:flex;gap:10px;align-items:center}
+.grow{flex:1;min-width:0}
+
+/* ---------- 居中卡片（登录 / 注册） ---------- */
+.auth-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px}
+.brand{display:flex;align-items:center;gap:11px;margin-bottom:22px}
+.mark{
+  width:36px;height:36px;border-radius:10px;background:var(--accent);color:#0a0b0c;
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;
+}
+.brand h1{font-size:15px;font-weight:600;letter-spacing:.2px}
+.brand small{display:block;color:var(--faint);font-size:11.5px;margin-top:2px}
+
+.card{
+  width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:22px 22px 20px;
+}
+.card.wide{max-width:720px}
+.card h2{font-size:15px;font-weight:600;margin-bottom:4px}
+.card .sub{color:var(--muted);font-size:12px;margin-bottom:18px}
+.card .foot{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);text-align:center}
+.msg{font-size:12px;padding:8px 10px;border-radius:var(--r-sm);margin-bottom:12px;display:none}
+.msg.show{display:block}
+.msg.err{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.28);color:#fca5a5}
+.msg.ok{background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.26);color:#86efac}
+
+/* ---------- 后台页面 ---------- */
+.top{
+  position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
+  height:52px;padding:0 18px;background:rgba(8,9,10,.86);
+  border-bottom:1px solid var(--line);backdrop-filter:blur(12px);
+}
+.top .mark{width:26px;height:26px;border-radius:7px;font-size:13px}
+.top .name{font-weight:600;font-size:13px}
+.top .spacer{flex:1}
+.top .who{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:7px}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block}
+
+.page{max-width:880px;margin:0 auto;padding:22px 16px 60px;display:flex;flex-direction:column;gap:16px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px}
+.panel h2{font-size:14px;font-weight:600;margin-bottom:3px}
+.panel .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:620px){.grid2{grid-template-columns:1fr}}
+.kv{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.chip{font-size:11.5px;color:var(--text-2);background:var(--surface-3);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+.chip b{color:var(--text);font-weight:600}
+
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--faint);font-weight:500;font-size:11.5px;text-transform:none}
+tr:last-child td{border-bottom:none}
+td input{height:30px;width:72px;padding:0 7px;font-size:12px}
+td.acts{white-space:nowrap;text-align:right}
+td.acts button{margin-left:6px}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:1px;color:var(--accent)}
+.tag{font-size:11px;padding:1.5px 7px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.tag.on{color:#86efac;border-color:rgba(74,222,128,.3);background:rgba(74,222,128,.08)}
+.tag.off{color:#fca5a5;border-color:rgba(248,113,113,.28);background:rgba(248,113,113,.08)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (max-width:620px){
+  .top{padding:0 12px}
+  .top .who span.hide-sm{display:none}
+  .page{padding:14px 10px 40px}
+  .panel{padding:14px}
+}

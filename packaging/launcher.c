@@ -28,6 +28,7 @@
 #define IDM_LOG      1002
 #define IDM_RESTART  1003
 #define IDM_EXIT     1004
+#define IDM_DATA     1005
 #define TRAY_UID     1
 #define TRAY_ICON    1
 
@@ -105,6 +106,15 @@ static void openConsole(void) {
 
     _snwprintf(url, 128, L"http://127.0.0.1:%d/", port);
     ShellExecuteW(NULL, L"open", url, NULL, NULL, SW_SHOWNORMAL);
+}
+
+/* 多用户版的初始管理员密码写在 data\admin-password.txt，得让用户找得到 */
+static void openData(void) {
+    if (GetFileAttributesW(g_data) == INVALID_FILE_ATTRIBUTES) {
+        MessageBoxW(NULL, L"数据目录还没建好，先让服务跑起来。", L"OCS 网课助手", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    ShellExecuteW(NULL, L"open", g_data, NULL, NULL, SW_SHOWNORMAL);
 }
 
 static void openLog(void) {
@@ -264,6 +274,7 @@ static void showMenu(void) {
     AppendMenuW(m, MF_STRING, IDM_OPEN, L"打开控制台");
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING, IDM_LOG, L"查看运行日志");
+    AppendMenuW(m, MF_STRING, IDM_DATA, L"打开数据目录（初始密码）");
     if (!g_running) AppendMenuW(m, MF_STRING, IDM_RESTART, L"重新启动服务");
     AppendMenuW(m, MF_SEPARATOR, 0, NULL);
     AppendMenuW(m, MF_STRING, IDM_EXIT, L"退出");
@@ -306,6 +317,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
             return 0;
         case IDM_LOG:
             openLog();
+            return 0;
+        case IDM_DATA:
+            openData();
             return 0;
         case IDM_RESTART:
             stopNode();

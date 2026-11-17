@@ -12,6 +12,7 @@ const { CameraHub } = require('./camera');
 const { resolveAi, summarize: summarizeAi, sanitize: sanitizeUserAi } = require('./user-ai');
 const { forceGc, clearProfileCaches, clearPageCaches } = require('./cleanup');
 const { exportBackup, importBackup, MAX_IMPORT_BYTES } = require('./backup');
+const { Accounts } = require('./accounts');
 const { version: PKG_VERSION } = require('../package.json');
 
 const config = new Config();
@@ -23,6 +24,47 @@ const cameraHub = new CameraHub({
   logger: (level, msg) => (logger[level] || logger.info)(msg),
   onChange: () => broadcastCamera()
 });
+
+/* ---------------- 系统账号：注册 / 登录 / 邀请码 ---------------- */
+const authCfg = config.data.auth || {};
+const accounts = new Accounts({
+  dataDir: DATA_DIR,
+  logger,
+  sessionDays: Number(authCfg.sessionDays) || 30,
+  defaultMaxTasks: authCfg.defaultMaxTasks === undefined ? 3 : Number(authCfg.defaultMaxTasks) || 0,
+  inviteDays: Number(authCfg.inviteDays) || 7
+});
+// 第一次启动没有管理员时建一个，密码写进 data/admin-password.txt
+accounts.ensureAdmin();
+
+const SESSION_COOKIE = 'ocs_sid';
+
+function parseCookies(req) {
+  const out = {};
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    const k = part.slice(0, i).trim();
+    if (!k) continue;
+    out[k] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function sessionCookie(sid, maxAgeSec) {
+  // 局域网 http 下不能用 Secure，否则浏览器直接不存
+  return `${SESSION_COOKIE}=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}`;
+}
+
+function clearCookie() {
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
+function clientIp(req) {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return fwd || req.socket.remoteAddress || '';
+}
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
@@ -42,6 +84,24 @@ const users = config.users.map((u) => {
   const st = u.lastStatus === 'closed' || u.lastStatus === 'stopped' ? u.lastStatus : 'idle';
   return Object.assign({}, u, { status: st });
 });
+
+// 升级到多账号版时，老数据里的挂机号没有归属：统一归给管理员，
+// 否则它们既不属于任何普通用户，又会在下次落盘时被丢掉归属
+(() => {
+  const admin = accounts.list().find((a) => a.role === 'admin');
+  if (!admin) return;
+  let fixed = 0;
+  for (const u of users) {
+    if (!u.owner) {
+      u.owner = admin.id;
+      fixed += 1;
+    }
+  }
+  if (fixed) {
+    persistUsers();
+    logger.info(`[账号] ${fixed} 个旧挂机号已归到管理员 ${admin.username} 名下`);
+  }
+})();
 
 /**
  * 每个用户一套运行时：独立 GM 存储、独立 Chromium（独立 user-data-dir）、独立守护循环。
@@ -68,7 +128,7 @@ function runtimeFor(user) {
   bridge.onOcr = async (userId, payload) => {
     // 用这个用户自己的接口：AI 识别加密字也吃他的额度
     const owner = users.find((u) => u.id === userId) || { id: userId };
-    const ai = resolveAi(config.data.ai, owner);
+    const ai = resolveAi(config.data.ai, owner, accountOfUser(owner));
     if (!ai.enabled) return { ok: false, error: 'AI 答题未启用，无法使用 AI 识别加密字' };
     if (ai.supportImages === false) return { ok: false, error: '设置里关闭了「允许发送图片」' };
     const r = await recognizeGlyphs({
@@ -113,8 +173,8 @@ function runtimeFor(user) {
         user.lastUrl = at;
         scheduleSessionSave();
       }
-      const s = config.data.session || {};
-      if (!s.lastUserId || s.lastUserId === user.id) noteSession(user, at);
+      // 每个账号的现场分开记，多个人同时在线不会互相顶掉
+      noteSession(user, at);
     } catch (e) {}
   });
 
@@ -171,7 +231,7 @@ function snapshotUser(u) {
     error: u.error || null,
     saved: hasProfile(u),
     // 只给摘要：这个用户是不是单独配了 AI、用的哪个模型。Key 永远不出服务端
-    ai: summarizeAi(config.data.ai, u),
+    ai: summarizeAi(config.data.ai, u, accountOfUser(u)),
     startedAt: u.startedAt || null,
     finishedAt: u.finishedAt || null
   };
@@ -180,13 +240,19 @@ function snapshotUser(u) {
 /**
  * 单个用户的 AI 配置视图（给面板用）。
  * - ai：这个人的可编辑项，Key 只回 hasKey / ownKey，不回明文
- * - global：全局那份的摘要，面板上用来说明「留空就用这个」
+ * - global：留空时回落到的那份（管理员是全局配置，普通用户是自己的账户配置）
  * - effective：合并后真正在用的接口，面板上直接显示，省得自己算
  */
-function userAiView(user) {
+function accountOfUser(user) {
+  return user && user.owner ? accounts.byId(user.owner) : null;
+}
+
+function userAiView(user, account) {
   const own = user.ai && typeof user.ai === 'object' ? user.ai : {};
-  const eff = resolveAi(config.data.ai, user);
-  const g = config.data.ai || {};
+  const eff = resolveAi(config.data.ai, user, account);
+  // 普通用户没有「全局」这一层，面板上的回落目标是他自己的账户配置
+  const isPlainUser = !!(account && account.role !== 'admin');
+  const g = isPlainUser ? (account.ai && account.ai.custom ? account.ai : {}) : config.data.ai || {};
   const custom = !!own.custom;
   return {
     ai: {
@@ -206,7 +272,8 @@ function userAiView(user) {
       provider: g.provider || '',
       model: g.model || '',
       baseUrl: g.baseUrl || '',
-      hasKey: !!g.apiKey
+      hasKey: !!g.apiKey,
+      scope: isPlainUser ? 'account' : 'global'
     },
     effective: {
       enabled: !!eff.enabled,
@@ -220,6 +287,8 @@ function userAiView(user) {
 function persistUsers() {
   config.data.users = users.map((u) => {
     const row = { id: u.id, name: u.name, url: u.url || '', pin: !!u.pin };
+    // 归属：没有这一项，重启后所有挂机号就变成「无主」，普通用户全都看不见
+    if (u.owner) row.owner = u.owner;
     // 记住最后停留的页面，重启后能回到原处（登录页、课程页、考试页都算）
     if (u.lastUrl) row.lastUrl = u.lastUrl;
     if (u.lastStatus) row.lastStatus = u.lastStatus;
@@ -244,11 +313,24 @@ function noteSession(user, pageUrl) {
   const status = user.status || 'idle';
   if (httpUrl) user.lastUrl = httpUrl;
   user.lastStatus = status;
-  if (s.lastUserId === user.id && s.lastPageUrl === (httpUrl || s.lastPageUrl) && s.lastStatus === status) return;
-  s.lastUserId = user.id;
-  if (httpUrl) s.lastPageUrl = httpUrl;
-  s.lastStatus = status;
-  s.updatedAt = Date.now();
+
+  // 每个账号记自己的一份「上次在看谁」，多个人同时用不会互相顶掉
+  const key = user.owner || '';
+  s.byAccount = s.byAccount || {};
+  const a = s.byAccount[key] || (s.byAccount[key] = {});
+  if (a.lastUserId === user.id && a.lastPageUrl === (httpUrl || a.lastPageUrl) && a.lastStatus === status) return;
+  a.lastUserId = user.id;
+  if (httpUrl) a.lastPageUrl = httpUrl;
+  a.lastStatus = status;
+  a.updatedAt = Date.now();
+
+  // 兼容旧字段：没归属的（升级前的老数据）仍写顶层
+  if (!key) {
+    s.lastUserId = user.id;
+    if (httpUrl) s.lastPageUrl = httpUrl;
+    s.lastStatus = status;
+    s.updatedAt = Date.now();
+  }
   scheduleSessionSave();
 }
 
@@ -305,34 +387,101 @@ function readBinary(req, maxBytes) {
   });
 }
 
-function auth(req, res) {
-  const token = config.data.server.token;
-  if (!token) return true;
-  const url = new URL(req.url, 'http://localhost');
-  const provided = req.headers['x-token'] || url.searchParams.get('token');
-  if (provided !== token) {
-    send(res, 401, { error: '未授权，请提供正确的访问令牌' });
-    return false;
+function requireLogin(req, res) {
+  if (req.account) return true;
+  send(res, 401, { error: '请先登录', needLogin: true });
+  return false;
+}
+
+const ADMIN_ONLY = '只有管理员能做这个';
+
+function isAdmin(req) {
+  return !!(req.account && req.account.role === 'admin');
+}
+
+/** 这个人能不能操作这个挂机号 */
+function canAccess(req, user) {
+  if (!req.account || !user) return false;
+  return isAdmin(req) || user.owner === req.account.id;
+}
+
+/** 当前账号能看到的挂机号 */
+function visibleUsers(req) {
+  if (!req.account) return [];
+  return isAdmin(req) ? users : users.filter((u) => u.owner === req.account.id);
+}
+
+/** 按 id 找，但只在这个账号可见范围内找；找不到统一 404，不暴露别人有没有这个号 */
+function pickOwnedUser(req, id) {
+  const user = users.find((u) => u.id === id);
+  return user && canAccess(req, user) ? user : null;
+}
+
+function quotaOf(account) {
+  if (!account) return 0;
+  if (account.role === 'admin') return 0; // 0 = 不限
+  return Math.max(0, Number(account.maxTasks) || 0);
+}
+
+function taskCountOf(accountId) {
+  return users.filter((u) => u.owner === accountId).length;
+}
+
+/** 账户级 AI 同步到它名下的挂机号：任务自己单独配过（ai.own）的不覆盖 */
+function syncAccountAi(account) {
+  if (!account || !account.ai || !account.ai.custom) return 0;
+  let n = 0;
+  for (const u of users) {
+    if (u.owner !== account.id) continue;
+    if (u.ai && u.ai.own) continue;
+    u.ai = JSON.parse(JSON.stringify(account.ai));
+    // 普通账号的任务永远不继承管理员的 Key，哪怕账户里没填
+    if (account.role !== 'admin') u.ai.isolated = true;
+    n += 1;
+    const rt = runtimes.get(u.id);
+    if (rt) {
+      rt.host.syncConfigToStore();
+      const pages = rt.host.pages();
+      if (pages.length) {
+        Promise.all(pages.map((p) => rt.runner.applyConfigWithRetry(p, 8000).catch(() => null))).catch(() => {});
+      }
+    }
   }
-  return true;
+  if (n) persistUsers();
+  return n;
 }
 
 const sseClients = new Set();
+
+function ownerOfTask(taskId) {
+  if (!taskId) return '';
+  const u = users.find((x) => x.id === taskId);
+  return u ? u.owner || '' : '';
+}
+
 function sseBroadcast(entry) {
   const payload = `data: ${JSON.stringify(entry)}\n\n`;
-  for (const client of sseClients) {
+  for (const c of sseClients) {
+    // 日志按挂机号的归属分发，别人家的答题过程看不到
+    if (!c.isAdmin && (!entry.taskId || ownerOfTask(entry.taskId) !== c.accountId)) continue;
     try {
-      client.write(payload);
+      c.res.write(payload);
     } catch (e) {}
   }
 }
 
 /** 带事件名的推送：前端用 addEventListener('camera') 接 */
 function sseSend(event, data) {
-  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const client of sseClients) {
+  for (const c of sseClients) {
+    let d = data;
+    if (event === 'camera' && !c.isAdmin && data && Array.isArray(data.list)) {
+      d = Object.assign({}, data, {
+        list: data.list.filter((x) => ownerOfTask(x.userId) === c.accountId)
+      });
+      if (!d.list.length) continue;
+    }
     try {
-      client.write(payload);
+      c.res.write(`event: ${event}\ndata: ${JSON.stringify(d)}\n\n`);
     } catch (e) {}
   }
 }
@@ -355,7 +504,22 @@ function broadcastCamera() {
   sseSend('camera', { list: cameraHub.list() });
 }
 
+function redirect(res, to) {
+  res.writeHead(302, { Location: to, 'Cache-Control': 'no-store' });
+  res.end();
+}
+
+const PUBLIC_PAGES = new Set(['/login.html', '/register.html', '/auth.css']);
+
 function serveStatic(req, res, pathname) {
+  // 登录页、注册页谁都能看；控制台、账号页、管理页必须登录
+  if (!PUBLIC_PAGES.has(pathname)) {
+    if (!req.account) return redirect(res, '/login.html');
+    if (pathname === '/admin.html' && !isAdmin(req)) return redirect(res, '/');
+  } else if (req.account && pathname !== '/auth.css') {
+    return redirect(res, '/');
+  }
+
   const rel = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
   const filePath = path.join(PUBLIC_DIR, rel);
   if (!filePath.startsWith(PUBLIC_DIR)) return send(res, 403, { error: 'forbidden' });
@@ -368,6 +532,21 @@ function serveStatic(req, res, pathname) {
     });
     res.end(buf);
   });
+}
+
+/** 找用户：?user= 优先，否则第一个有页面的（只在当前账号可见范围内） */
+function pickVisibleUser(req, hint) {
+  const list = visibleUsers(req);
+  if (hint) {
+    const u = list.find((x) => x.id === hint);
+    if (u) return u;
+  }
+  return (
+    list.find((u) => {
+      const rt = runtimes.get(u.id);
+      return rt && rt.runner.page && !rt.runner.page.isClosed();
+    }) || null
+  );
 }
 
 /** 找用户：?user= 优先，否则第一个有页面的 */
@@ -426,34 +605,218 @@ const server = http.createServer(async (req, res) => {
   const method = req.method.toUpperCase();
   let pathname = url.pathname;
 
+  // 先用 cookie 认人：静态页面和 API 都要用
+  const sid = parseCookies(req)[SESSION_COOKIE];
+  req.sid = sid || null;
+  req.account = accounts.getSession(sid);
+
   if (!pathname.startsWith('/api/')) return serveStatic(req, res, pathname);
 
-  // 启动器用它判断「这个端口上是不是已经跑着本程序」，不走 token，避免设了令牌就误判成别的程序
+  // 启动器用它判断「这个端口上是不是已经跑着本程序」，不需要登录
   if (pathname === '/api/ping' && method === 'GET') {
     return send(res, 200, { ok: true, name: 'ocs-server', version: PKG_VERSION });
   }
-
-  if (!auth(req, res)) return;
 
   // 兼容 v2.1 的旧前端（浏览器可能还缓存着 /api/tasks）
   pathname = pathname.replace(/^\/api\/tasks/, '/api/users');
 
   try {
+    /* ---------------- 登录 / 注册（未登录可用） ---------------- */
+    if (pathname === '/api/auth/me' && method === 'GET') {
+      return send(res, 200, {
+        ok: true,
+        account: req.account ? accounts.publicView(req.account, taskCountOf(req.account.id)) : null,
+        allowRegister: authCfg.allowRegister !== false
+      });
+    }
+
+    if (pathname === '/api/auth/login' && method === 'POST') {
+      const body = await readBody(req);
+      const ip = clientIp(req);
+      const key = `${ip}|${String(body.username || '').trim().toLowerCase()}`;
+      if (accounts.tooManyFails(key)) {
+        return send(res, 429, { error: '密码错误次数太多，5 分钟后再试' });
+      }
+      const acc = accounts.verify(body.username, body.password);
+      if (!acc) {
+        accounts.noteFail(key);
+        return send(res, 400, { error: '用户名或密码不对' });
+      }
+      if (acc.disabled) return send(res, 403, { error: '这个账号已被停用' });
+      accounts.clearFails(key);
+      acc.lastLoginAt = Date.now();
+      accounts.save();
+      const nsid = accounts.createSession(acc.id, { ip, ua: req.headers['user-agent'] });
+      res.setHeader('Set-Cookie', sessionCookie(nsid, accounts.sessionDays * 86400));
+      logger.info(`[账号] ${acc.username} 登录（${ip}）`);
+      return send(res, 200, { ok: true, account: accounts.publicView(acc, taskCountOf(acc.id)) });
+    }
+
+    if (pathname === '/api/auth/register' && method === 'POST') {
+      if (authCfg.allowRegister === false) return send(res, 403, { error: '管理员关闭了注册' });
+      const body = await readBody(req);
+      const check = accounts.checkInvite(body.invite);
+      if (!check.ok) return send(res, 400, { error: check.error });
+      let acc;
+      try {
+        acc = accounts.create({ username: body.username, password: body.password, role: 'user' });
+      } catch (e) {
+        return send(res, 400, { error: e.message });
+      }
+      accounts.consumeInvite(body.invite, acc.id);
+      const ip = clientIp(req);
+      acc.lastLoginAt = Date.now();
+      accounts.save();
+      const nsid = accounts.createSession(acc.id, { ip, ua: req.headers['user-agent'] });
+      res.setHeader('Set-Cookie', sessionCookie(nsid, accounts.sessionDays * 86400));
+      logger.info(`[账号] 新用户 ${acc.username} 通过邀请码注册（${ip}）`);
+      return send(res, 200, { ok: true, account: accounts.publicView(acc, 0) });
+    }
+
+    if (pathname === '/api/auth/logout' && method === 'POST') {
+      accounts.destroySession(req.sid);
+      res.setHeader('Set-Cookie', clearCookie());
+      return send(res, 200, { ok: true });
+    }
+
+    if (!requireLogin(req, res)) return;
+
+    /* ---------------- 当前账号 ---------------- */
+    if (pathname === '/api/account' && method === 'GET') {
+      return send(res, 200, {
+        ok: true,
+        account: accounts.publicView(req.account, taskCountOf(req.account.id))
+      });
+    }
+
+    if (pathname === '/api/account/password' && method === 'POST') {
+      const body = await readBody(req);
+      const acc = accounts.verify(req.account.username, body.oldPassword);
+      if (!acc) return send(res, 400, { error: '原密码不对' });
+      try {
+        accounts.setPassword(req.account.id, body.newPassword);
+      } catch (e) {
+        return send(res, 400, { error: e.message });
+      }
+      // 改完密码所有会话失效，包括当前这个，要求重新登录
+      res.setHeader('Set-Cookie', clearCookie());
+      return send(res, 200, { ok: true, relogin: true });
+    }
+
+    // 账户级 AI：一次配好，名下还没单独配过的挂机号都用这份
+    if (pathname === '/api/account/ai' && method === 'GET') {
+      const eff = resolveAi(config.data.ai, null, req.account);
+      return send(res, 200, {
+        ok: true,
+        ai: {
+          custom: !!(req.account.ai && req.account.ai.custom),
+          enabled: !!eff.enabled,
+          provider: eff.provider || '',
+          baseUrl: eff.baseUrl || '',
+          model: eff.model || '',
+          temperature: Number(eff.temperature ?? 0.2),
+          maxTokens: Number(eff.maxTokens ?? 1024),
+          supportImages: eff.supportImages !== false,
+          hasKey: !!eff.apiKey,
+          ownKey: !!(req.account.ai && req.account.ai.apiKey)
+        },
+        tasks: taskCountOf(req.account.id)
+      });
+    }
+
+    if (pathname === '/api/account/ai' && (method === 'PUT' || method === 'POST')) {
+      const body = await readBody(req);
+      const prev = req.account.ai || {};
+      const next = sanitizeUserAi(body, prev);
+      // 普通用户不允许回落到管理员的全局 Key：没填 Key 就是没有 Key
+      if (!isAdmin(req) && !next.apiKey) next.apiKey = '';
+      accounts.update(req.account.id, { ai: next });
+      const n = syncAccountAi(req.account);
+      logger.info(`[账号] ${req.account.username} 更新了 AI 配置，同步到 ${n} 个挂机号`);
+      return send(res, 200, { ok: true, synced: n });
+    }
+
+    /* ---------------- 管理员：账号与邀请码 ---------------- */
+    if (pathname === '/api/admin/accounts' && method === 'GET') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
+      return send(res, 200, {
+        ok: true,
+        accounts: accounts.list().map((a) => accounts.publicView(a, taskCountOf(a.id)))
+      });
+    }
+
+    const adminAccMatch = pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
+    if (adminAccMatch && (method === 'PUT' || method === 'POST')) {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
+      const target = accounts.byId(adminAccMatch[1]);
+      if (!target) return send(res, 404, { error: '账号不存在' });
+      if (target.role === 'admin' && target.id !== req.account.id) {
+        return send(res, 400, { error: '不能改别的管理员' });
+      }
+      const body = await readBody(req);
+      if (body.maxTasks !== undefined && target.role !== 'admin') {
+        accounts.update(target.id, { maxTasks: body.maxTasks });
+      }
+      if (body.disabled !== undefined && target.id !== req.account.id) {
+        accounts.update(target.id, { disabled: !!body.disabled });
+      }
+      if (body.resetPassword) {
+        const pwd = String(body.resetPassword);
+        try {
+          accounts.setPassword(target.id, pwd);
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+      }
+      return send(res, 200, { ok: true, account: accounts.publicView(accounts.byId(target.id), taskCountOf(target.id)) });
+    }
+
+    if (pathname === '/api/admin/invites' && method === 'GET') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
+      return send(res, 200, { ok: true, invites: accounts.listInvites() });
+    }
+
+    if (pathname === '/api/admin/invites' && method === 'POST') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
+      const body = await readBody(req);
+      const inv = accounts.createInvite({
+        createdBy: req.account.id,
+        maxUses: body.maxUses,
+        days: body.days,
+        note: body.note
+      });
+      return send(res, 200, { ok: true, invite: inv });
+    }
+
+    const inviteMatch = pathname.match(/^\/api\/admin\/invites\/([A-Za-z0-9]+)$/);
+    if (inviteMatch && method === 'DELETE') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
+      try {
+        accounts.revokeInvite(inviteMatch[1]);
+      } catch (e) {
+        return send(res, 404, { error: e.message });
+      }
+      return send(res, 200, { ok: true });
+    }
+
     /* ---------------- 状态 ---------------- */
     if (pathname === '/api/state' && method === 'GET') {
       const mem = process.memoryUsage();
+      const mine = visibleUsers(req);
       // 前端一直用 ?task=，老接口用 ?user=，两个都认
-      const focus = pickUser(url.searchParams.get('user') || url.searchParams.get('task'));
+      const focus = pickVisibleUser(req, url.searchParams.get('user') || url.searchParams.get('task'));
       // 顺手记下「谁在被看、停在哪一页」，服务重启时据此恢复现场
       if (focus) {
         const frt = runtimes.get(focus.id);
         noteSession(focus, frt ? frt.runner.pageUrl() : '');
       }
-      const list = users.map(snapshotUser);
+      const list = mine.map(snapshotUser);
       let browserCount = 0;
       let browserRunning = false;
       let anyBusy = false;
-      for (const rt of runtimes.values()) {
+      for (const u of mine) {
+        const rt = runtimes.get(u.id);
+        if (!rt) continue;
         if (rt.host.running) {
           browserCount += 1;
           browserRunning = true;
@@ -474,7 +837,7 @@ const server = http.createServer(async (req, res) => {
           deviceScaleFactor: config.data.browser.deviceScaleFactor
         },
         runner: {
-          running: users.some((u) => (u.status || '') === 'running'),
+          running: mine.some((u) => (u.status || '') === 'running'),
           busy: anyBusy
         },
         page: { url: focus ? (runtimes.get(focus.id) || { runner: { pageUrl: () => null } }).runner.pageUrl() : null },
@@ -485,13 +848,16 @@ const server = http.createServer(async (req, res) => {
           diskMB: snap.disk.dataMB,
           blocked: saver.blocked
         },
+        account: accounts.publicView(req.account, mine.length),
+        isAdmin: isAdmin(req),
         users: list
       });
     }
 
     /* ---------------- 上次的现场（选中的用户 / 停留的页面）---------------- */
     if (pathname === '/api/session' && method === 'GET') {
-      const s = config.data.session || {};
+      const all = config.data.session || {};
+      const s = (all.byAccount && all.byAccount[req.account.id]) || {};
       return send(res, 200, {
         ok: true,
         lastUserId: s.lastUserId || '',
@@ -499,7 +865,7 @@ const server = http.createServer(async (req, res) => {
         lastStatus: s.lastStatus || '',
         updatedAt: s.updatedAt || 0,
         resumeSession: config.data.server.resumeSession !== false,
-        users: users.map((u) => ({
+        users: visibleUsers(req).map((u) => ({
           id: u.id,
           name: u.name,
           lastUrl: u.lastUrl || '',
@@ -510,9 +876,11 @@ const server = http.createServer(async (req, res) => {
     // 前端切到哪个用户就报一下，下次用别的电脑打开控制台也能选回同一个人
     if (pathname === '/api/session' && method === 'PUT') {
       const body = await readBody(req);
-      const u = users.find((x) => x.id === body.lastUserId);
+      const u = pickOwnedUser(req, body.lastUserId);
       if (!u) return send(res, 400, { error: '用户不存在' });
-      const s = config.data.session || (config.data.session = {});
+      const all = config.data.session || (config.data.session = {});
+      all.byAccount = all.byAccount || {};
+      const s = all.byAccount[req.account.id] || (all.byAccount[req.account.id] = {});
       const urt = runtimes.get(u.id);
       const pageUrl = urt ? urt.runner.pageUrl() : '';
       s.lastUserId = u.id;
@@ -532,9 +900,15 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/ai/test' && method === 'POST') {
       const body = await readBody(req);
       // 面板只回传用户填的项：留空的部分（尤其是已保存的 Key）从这个人生效的配置里补，
-      // 这样「改个模型名、不重填 Key」也能直接测；没带 userId 就按全局补
-      const owner = body.userId ? users.find((u) => u.id === body.userId) : null;
-      const eff = resolveAi(config.data.ai, owner || {});
+      // 这样「改个模型名、不重填 Key」也能直接测
+      const owner = body.userId ? pickOwnedUser(req, body.userId) : null;
+      if (body.userId && !owner) return send(res, 404, { error: '用户不存在' });
+      // 没指定挂机号：管理员用全局，普通用户用自己账户的配置，绝不借用管理员的 Key
+      const eff = owner
+        ? resolveAi(config.data.ai, owner, accountOfUser(owner))
+        : isAdmin(req)
+          ? resolveAi(config.data.ai, null)
+          : resolveAi(config.data.ai, null, req.account);
       if (!body.baseUrl) body.baseUrl = eff.baseUrl;
       if (!body.model) body.model = eff.model;
       if (!body.apiKey) body.apiKey = eff.apiKey;
@@ -582,6 +956,7 @@ const server = http.createServer(async (req, res) => {
 
     /* ---------------- 配置（AI、题库、浏览器参数）---------------- */
     if (pathname === '/api/config' && method === 'GET') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
       // 每个用户的 API Key 单独走 /api/users/:id/ai 读写，不回传明文，
       // 否则打开一次全局设置就把所有人（可能十来个）的 Key 全发到浏览器
       const pub = JSON.parse(JSON.stringify(config.data));
@@ -596,6 +971,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, pub);
     }
     if (pathname === '/api/config' && method === 'PUT') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
       const patch = await readBody(req);
       const beforeSaver = !!(config.data.browser.resourceSaver && config.data.browser.resourceSaver.enabled);
       config.update(patch);
@@ -637,6 +1013,7 @@ const server = http.createServer(async (req, res) => {
 
     /* ---------------- 资源占用 ---------------- */
     if (pathname === '/api/metrics' && method === 'GET') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
       metrics.setSaverStats(saverStats());
       syncProfiles();
       const snap = metrics.snapshot();
@@ -649,6 +1026,7 @@ const server = http.createServer(async (req, res) => {
      *   all  = 所有用户（运行中的只关多余标签、清缓存，不打断任务）
      */
     if (pathname === '/api/maintenance/cleanup' && method === 'POST') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
       const body = await readBody(req);
       const scope = body.scope === 'all' ? 'all' : 'idle';
       const doTabs = body.tabs !== false;
@@ -714,6 +1092,7 @@ const server = http.createServer(async (req, res) => {
      * 缓存目录（Cache / Code Cache / GPUCache …）不进包，体积能小一个数量级。
      */
     if (pathname === '/api/backup/export' && method === 'GET') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
       try {
         const busy = users.filter((u) => {
           const rt = runtimes.get(u.id);
@@ -747,6 +1126,7 @@ const server = http.createServer(async (req, res) => {
      * 旧数据会留在 data.bak-<时间>/ 里，导错了还能拿回来。
      */
     if (pathname === '/api/backup/import' && method === 'POST') {
+      if (!isAdmin(req)) return send(res, 403, { error: ADMIN_ONLY });
       let buf;
       try {
         buf = await readBinary(req, MAX_IMPORT_BYTES);
@@ -791,6 +1171,21 @@ const server = http.createServer(async (req, res) => {
       users.length = 0;
       users.push(...next);
 
+      // 备份可能来自另一台机器：不属于本机账号的挂机号收归当前管理员，
+      // 否则它们会变成「无主」，谁登录都看不见
+      const validOwners = new Set(accounts.list().map((a) => a.id));
+      let adopted = 0;
+      for (const u of users) {
+        if (!u.owner || !validOwners.has(u.owner)) {
+          u.owner = req.account.id;
+          adopted += 1;
+        }
+      }
+      if (adopted) {
+        persistUsers();
+        logger.info(`[备份] ${adopted} 个挂机号的原账号不存在，已归到当前管理员名下`);
+      }
+
       logger.info(
         `[备份] 已导入 ${next.length} 个用户、${result.files} 个文件` +
           (result.backup ? `，原数据已备份到 ${path.basename(result.backup)}` : '')
@@ -820,21 +1215,35 @@ const server = http.createServer(async (req, res) => {
 
     /* ---------------- 用户 ---------------- */
     if (pathname === '/api/users' && method === 'GET') {
-      return send(res, 200, { users: users.map(snapshotUser) });
+      return send(res, 200, { users: visibleUsers(req).map(snapshotUser) });
     }
 
     if (pathname === '/api/users' && method === 'POST') {
       const body = await readBody(req);
       const name = String(body.name || '').trim();
       if (!name) return send(res, 400, { error: '请先给用户起个名字' });
-      if (users.some((u) => u.name === name)) return send(res, 400, { error: '已经有同名用户了，换个名字吧' });
+      // 配额：0 = 不限，管理员默认不限
+      const quota = quotaOf(req.account);
+      if (quota > 0 && taskCountOf(req.account.id) >= quota) {
+        return send(res, 403, { error: `你的账号最多只能建 ${quota} 个挂机号，需要更多请联系管理员` });
+      }
+      const mine = visibleUsers(req);
+      if (mine.some((u) => u.name === name)) return send(res, 400, { error: '已经有同名用户了，换个名字吧' });
       const user = {
         id: newId(),
         name,
         url: String(body.url || '').trim(),
         status: 'idle',
-        pin: !!body.pin
+        pin: !!body.pin,
+        owner: req.account.id,
+        // isolated：这个号不继承管理员的全局接口/Key，只认账户自己的那份
+        ai: { custom: true, enabled: false, isolated: !isAdmin(req) }
       };
+      // 账户配过 AI，就把那份带过来；没配就是「未启用」，不会偷偷用管理员的 Key
+      if (req.account.ai && req.account.ai.custom) {
+        user.ai = JSON.parse(JSON.stringify(req.account.ai));
+        if (!isAdmin(req)) user.ai.isolated = true;
+      }
       users.push(user);
       persistUsers();
       openUserBrowser(user); // 新建即开一个独立浏览器
@@ -845,7 +1254,7 @@ const server = http.createServer(async (req, res) => {
       /^\/api\/users\/([^/]+)(?:\/(run|pin|relock|stop|goto|open|tabs|ai|window))?$/
     );
     if (userMatch) {
-      const user = users.find((u) => u.id === userMatch[1]);
+      const user = pickOwnedUser(req, userMatch[1]);
       if (!user) return send(res, 404, { error: '用户不存在' });
       const action = userMatch[2];
       const rt = runtimeFor(user);
@@ -853,16 +1262,18 @@ const server = http.createServer(async (req, res) => {
 
       // 这个用户自己的 AI 接口：不同账号可以用不同服务商、不同 Key、不同额度
       if (action === 'ai') {
-        if (method === 'GET') return send(res, 200, { ok: true, ...userAiView(user) });
+        if (method === 'GET') return send(res, 200, { ok: true, ...userAiView(user, accountOfUser(user)) });
         if (method === 'PUT' || method === 'POST') {
           const body = await readBody(req);
           user.ai = sanitizeUserAi(body, user.ai);
+          // 标成「这个号单独配过」：之后账户级 AI 再改，不会把它覆盖掉
+          user.ai.own = true;
           persistUsers();
           // 立刻生效：GM 存储先换掉（快），页面内存里的 cfg 放后台改，
           // 免得某个页面脚本没初始化完把「保存」按钮卡上几秒
           rt.host.syncConfigToStore();
           const pages = rt.host.pages();
-          const eff = resolveAi(config.data.ai, user);
+          const eff = resolveAi(config.data.ai, user, accountOfUser(user));
           const keySrc = user.ai.apiKey ? '独立 Key' : eff.apiKey ? '用全局 Key' : '没有 Key';
           const who = user.ai.custom
             ? `独立接口 ${eff.model || '未填模型'}（${keySrc}）`
@@ -883,7 +1294,7 @@ const server = http.createServer(async (req, res) => {
           } else {
             consoleLog('info', '这个用户的浏览器还没打开，下次打开/运行会自动用新配置', user.name);
           }
-          return send(res, 200, { ok: true, ...userAiView(user) });
+          return send(res, 200, { ok: true, ...userAiView(user, accountOfUser(user)) });
         }
       }
 
@@ -1012,8 +1423,9 @@ const server = http.createServer(async (req, res) => {
 
     // 停止全部
     if ((pathname === '/api/stop' || pathname === '/api/stop-all') && method === 'POST') {
-      await Promise.all(users.map((u) => stopUser(u).catch(() => {})));
-      users.forEach((u) => {
+      const mine = visibleUsers(req);
+      await Promise.all(mine.map((u) => stopUser(u).catch(() => {})));
+      mine.forEach((u) => {
         if (u.status === 'running' || u.status === 'queued') u.status = 'stopped';
         u.lastStatus = 'stopped';
       });
@@ -1025,7 +1437,7 @@ const server = http.createServer(async (req, res) => {
 
     /* ---------------- 画面与输入（用于首次登录）---------------- */
     if (pathname === '/api/screen' && method === 'GET') {
-      const user = pickUser(url.searchParams.get('user') || url.searchParams.get('task'));
+      const user = pickVisibleUser(req, url.searchParams.get('user') || url.searchParams.get('task'));
       if (!user) return send(res, 404, { error: '当前没有打开的用户页面' });
       const rt = runtimeFor(user);
       const buf = await rt.runner
@@ -1038,7 +1450,7 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === '/api/input' && method === 'POST') {
       const body = await readBody(req);
-      const user = pickUser(body.user || body.task);
+      const user = pickVisibleUser(req, body.user || body.task);
       if (!user) return send(res, 409, { error: '当前没有可操作的用户页面' });
       const r = runtimeFor(user).runner;
       if (body.type === 'click') await r.click(body.x, body.y);
@@ -1070,7 +1482,7 @@ const server = http.createServer(async (req, res) => {
         return send(res, 403, { error: '只允许本机调用' });
       }
       const body = await readBody(req);
-      const user = pickUser(body.user);
+      const user = pickVisibleUser(req, body.user);
       if (!user) return send(res, 409, { error: '当前没有可操作的用户页面' });
       const page = runtimeFor(user).runner.page;
       if (!page || page.isClosed()) return send(res, 409, { error: '没有打开的页面' });
@@ -1084,13 +1496,19 @@ const server = http.createServer(async (req, res) => {
 
     /* ---------------- 人脸核验（摄像头接管） ---------------- */
     if (pathname === '/api/camera' && method === 'GET') {
-      return send(res, 200, { list: cameraHub.list(), now: Date.now() });
+      const ids = new Set(visibleUsers(req).map((u) => u.id));
+      return send(res, 200, {
+        list: cameraHub.list().filter((c) => ids.has(c.userId)),
+        now: Date.now()
+      });
     }
 
     const camMatch = pathname.match(/^\/api\/camera\/([^/]+)\/(preview|frame|stop|refuse|start)$/);
     if (camMatch) {
       const userId = decodeURIComponent(camMatch[1]);
       const what = camMatch[2];
+      // 人脸画面只给这个号的主人看
+      if (!pickOwnedUser(req, userId)) return send(res, 404, { error: '用户不存在' });
 
       // 预览：直接把最新一帧当图片吐出去，前端 <img> 换 src 就行
       if (what === 'preview' && method === 'GET') {
@@ -1128,7 +1546,10 @@ const server = http.createServer(async (req, res) => {
 
     /* ---------------- 日志 ---------------- */
     if (pathname === '/api/logs' && method === 'GET') {
-      return send(res, 200, { logs: logs.slice(-300) });
+      const mine = new Set(visibleUsers(req).map((u) => u.id));
+      return send(res, 200, {
+        logs: isAdmin(req) ? logs.slice(-300) : logs.filter((l) => l.taskId && mine.has(l.taskId)).slice(-300)
+      });
     }
     if (pathname === '/api/logs/stream') {
       res.writeHead(200, {
@@ -1137,12 +1558,16 @@ const server = http.createServer(async (req, res) => {
         Connection: 'keep-alive'
       });
       res.write(': connected\n\n');
-      sseClients.add(res);
+      const client = { res, accountId: req.account.id, isAdmin: isAdmin(req) };
+      sseClients.add(client);
       // 刚连上先给一份当前的人脸核验状态，否则要等下一个人脸请求才知道
       try {
-        res.write(`event: camera\ndata: ${JSON.stringify({ list: cameraHub.list() })}\n\n`);
+        const list = cameraHub.list().filter((c) => client.isAdmin || ownerOfTask(c.userId) === client.accountId);
+        if (list.length || client.isAdmin) {
+          res.write(`event: camera\ndata: ${JSON.stringify({ list })}\n\n`);
+        }
       } catch (e) {}
-      req.on('close', () => sseClients.delete(res));
+      req.on('close', () => sseClients.delete(client));
       return;
     }
 

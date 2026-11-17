@@ -47,7 +47,10 @@ const SKIP_FILES = new Set([
   'singletonsocket',
   '.port',
   'lockfile',
-  'gm-store.probe.json' // 测接口用的临时存储，不是用户数据
+  'gm-store.probe.json', // 测接口用的临时存储，不是用户数据
+  'admin-password.txt', // 初始管理员密码：备份包可能被转发，别跟着一起走
+  'sessions.json', // 会话是这台机器的登录状态，换机器本来就该重新登录
+  'accounts.json' // 账号体系跟着本机走：导入别人的备份不该把当前管理员顶掉
 ]);
 
 const MAX_IMPORT_BYTES = 512 * 1024 * 1024; // 512MB：再大就让用户直接拷目录

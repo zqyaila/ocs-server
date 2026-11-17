@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>注册 · OCS 控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238ea8ff'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='%230a0b0c' font-family='sans-serif'%3EO%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/auth.css" />
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="brand">
+    <div class="mark">O</div>
+    <div>
+      <h1>OCS 控制台</h1>
+      <small>注册后自己管理自己的挂课账号</small>
+    </div>
+  </div>
+
+  <form class="card" id="form" autocomplete="on">
+    <h2>注册</h2>
+    <p class="sub">需要邀请码，找管理员要一个。注册完会自动登录。</p>
+    <div class="msg err" id="msg"></div>
+
+    <div class="field">
+      <label for="invite">邀请码</label>
+      <input id="invite" placeholder="例如 7KQ9M2XP" autocapitalize="characters" spellcheck="false" style="letter-spacing:2px;text-transform:uppercase" required />
+    </div>
+    <div class="field">
+      <label for="username">用户名</label>
+      <input id="username" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="3-24 位，中英文 / 数字 / 下划线" required />
+    </div>
+    <div class="field">
+      <label for="password">密码</label>
+      <input id="password" type="password" autocomplete="new-password" placeholder="至少 6 位" required />
+    </div>
+    <div class="field">
+      <label for="password2">确认密码</label>
+      <input id="password2" type="password" autocomplete="new-password" required />
+    </div>
+
+    <button class="primary" id="btnReg" type="submit" style="width:100%;height:38px">注册并登录</button>
+
+    <div class="foot">
+      已经有账号了？<a href="/login.html">去登录</a>
+    </div>
+  </form>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+function show(msg, ok) {
+  const n = $('msg');
+  n.textContent = msg;
+  n.className = 'msg show ' + (ok ? 'ok' : 'err');
+}
+
+$('invite').addEventListener('input', (e) => {
+  e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+});
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const pwd = $('password').value;
+  if (pwd !== $('password2').value) return show('两次输入的密码不一样');
+  if (pwd.length < 6) return show('密码至少 6 位');
+
+  const btn = $('btnReg');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ invite: $('invite').value.trim(), username: $('username').value.trim(), password: pwd })
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || '注册失败');
+    show('注册成功，正在进入控制台…', true);
+    location.href = '/';
+  } catch (err) {
+    show(err.message);
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

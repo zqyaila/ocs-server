@@ -35,15 +35,12 @@ function isCustom(user) {
 }
 
 /**
- * @param {object} globalAi  config.data.ai
+ * @param {object} globalAi  config.data.ai（管理员配的全局接口）
  * @param {object} user      users 里的一个条目（可带 ai 段）
- * @returns {object}         该用户实际生效的 AI 配置
+ * @param {object} account   系统账号（可带 ai 段，作为用户级之上的默认）
+ * @returns {object}         实际生效的 AI 配置
  */
-function resolveAi(globalAi, user) {
-  const base = globalAi && typeof globalAi === 'object' ? globalAi : {};
-  const own = user && user.ai;
-  if (!own || !own.custom) return base;
-
+function overlay(base, own) {
   const out = Object.assign({}, base);
   for (const key of OVERRIDABLE) {
     const v = own[key];
@@ -59,9 +56,39 @@ function resolveAi(globalAi, user) {
   return out;
 }
 
+// 普通账号能用全局配置里的「参数类」字段，但接口地址、模型、Key 必须自己填，
+// 否则会白嫖管理员的额度、也能从 hasKey 看出人家配没配
+const SAFE_KEYS = ['temperature', 'maxTokens', 'timeoutSeconds', 'requestType', 'retry', 'systemPrompt', 'extraPrompt'];
+
+function safeBase(globalAi) {
+  const g = globalAi && typeof globalAi === 'object' ? globalAi : {};
+  const out = { enabled: false, provider: '', baseUrl: '', apiKey: '', model: '', supportImages: true };
+  for (const k of SAFE_KEYS) {
+    if (g[k] !== undefined) out[k] = g[k];
+  }
+  return out;
+}
+
+function resolveAi(globalAi, user, account) {
+  let base = globalAi && typeof globalAi === 'object' ? globalAi : {};
+
+  // 传了 account 就按账号类型先定基线：普通账号拿不到管理员的接口和 Key
+  if (account) {
+    if (account.role !== 'admin') base = safeBase(base);
+    const a = account.ai;
+    if (a && a.custom) base = overlay(base, a);
+  }
+
+  const own = user && user.ai;
+  if (!own || !own.custom) return base;
+  // isolated = 这个号明确「不继承上层 Key」，账户没配就是没有，不许回落到管理员那份
+  if (own.isolated) base = safeBase(base);
+  return overlay(base, own);
+}
+
 /** 给前端 / 日志用的摘要，不含 Key */
-function summarize(globalAi, user) {
-  const eff = resolveAi(globalAi, user);
+function summarize(globalAi, user, account) {
+  const eff = resolveAi(globalAi, user, account);
   return {
     custom: isCustom(user),
     enabled: !!eff.enabled,

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>账号设置 · OCS 控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238ea8ff'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='%230a0b0c' font-family='sans-serif'%3EO%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/auth.css" />
+</head>
+<body>
+<div class="top">
+  <div class="mark">O</div>
+  <div class="name">账号设置</div>
+  <div class="spacer"></div>
+  <a href="/" style="font-size:12px">← 返回控制台</a>
+  <button class="sm" id="btnLogout">退出</button>
+</div>
+
+<div class="page">
+  <section class="panel">
+    <h2>我的账号</h2>
+    <p class="sub">一个账号可以挂多个网课号，每个号的登录态互相独立。</p>
+    <div class="kv">
+      <span class="chip">用户名 <b id="accName">—</b></span>
+      <span class="chip">角色 <b id="accRole">—</b></span>
+      <span class="chip">挂机号 <b id="accTasks">0 / 0</b></span>
+      <span class="chip">上次登录 <b id="accLogin">—</b></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>AI 答题</h2>
+    <p class="sub">
+      这里配一次，名下所有挂机号都会用这份配置（单个号在控制台里单独改过的，不会被覆盖）。
+      想用自己的额度，就填自己的 Key。
+    </p>
+    <div class="msg err" id="aiMsg"></div>
+
+    <div class="grid2">
+      <div class="field">
+        <label for="provider">服务商预设</label>
+        <select id="provider">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI</option>
+          <option value="qwen">通义千问</option>
+          <option value="kimi">Kimi (Moonshot)</option>
+          <option value="zhipu">智谱 GLM</option>
+          <option value="siliconflow">硅基流动</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="ollama">本地 Ollama</option>
+          <option value="custom">自定义</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="model">模型名称</label>
+        <input id="model" placeholder="deepseek-chat" />
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="baseUrl">接口地址</label>
+      <input id="baseUrl" placeholder="https://api.deepseek.com/v1" />
+      <div class="hint" style="margin-top:5px">填到 /v1 即可，程序会自动补 /chat/completions</div>
+    </div>
+
+    <div class="field">
+      <label for="apiKey">API Key</label>
+      <input id="apiKey" type="password" placeholder="sk-..." />
+      <div class="hint" style="margin-top:5px" id="keyHint">保存在服务器上，不会回传到浏览器</div>
+    </div>
+
+    <div class="grid2">
+      <div class="field">
+        <label for="temp">温度</label>
+        <input id="temp" type="number" step="0.1" min="0" max="2" value="0.2" />
+      </div>
+      <div class="field">
+        <label for="maxTokens">最大回复 tokens</label>
+        <input id="maxTokens" type="number" min="128" max="8192" value="1024" />
+      </div>
+    </div>
+
+    <div class="field" style="display:flex;gap:18px;flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:7px;margin:0;color:var(--text-2)">
+        <input type="checkbox" id="enabled" style="width:auto;height:auto" /> 启用 AI 答题
+      </label>
+      <label style="display:flex;align-items:center;gap:7px;margin:0;color:var(--text-2)">
+        <input type="checkbox" id="supportImages" style="width:auto;height:auto" checked /> 允许发送题目图片
+      </label>
+    </div>
+
+    <div class="row">
+      <button id="btnTest">测试连接</button>
+      <button class="primary" id="btnSaveAi">保存</button>
+      <span class="hint" id="testOut"></span>
+    </div>
+    <p class="hint" style="margin-top:12px">
+      没填 Key 或没勾「启用」时，这个账号的挂机号不会调用任何模型，也不会借用管理员的 Key。
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2>修改密码</h2>
+    <p class="sub">改完会退出登录，需要用新密码重新进。</p>
+    <div class="msg err" id="pwdMsg"></div>
+    <div class="grid2">
+      <div class="field">
+        <label for="oldPwd">原密码</label>
+        <input id="oldPwd" type="password" autocomplete="current-password" />
+      </div>
+      <div class="field">
+        <label for="newPwd">新密码</label>
+        <input id="newPwd" type="password" autocomplete="new-password" placeholder="至少 6 位" />
+      </div>
+    </div>
+    <button class="primary" id="btnPwd">改密码</button>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const PRESET = {
+  deepseek: ['https://api.deepseek.com/v1', 'deepseek-chat'],
+  openai: ['https://api.openai.com/v1', 'gpt-4o-mini'],
+  qwen: ['https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen-plus'],
+  kimi: ['https://api.moonshot.cn/v1', 'moonshot-v1-8k'],
+  zhipu: ['https://open.bigmodel.cn/api/paas/v4', 'glm-4-flash'],
+  siliconflow: ['https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V3'],
+  openrouter: ['https://openrouter.ai/api/v1', 'openai/gpt-4o-mini'],
+  ollama: ['http://127.0.0.1:11434/v1', 'qwen2.5:7b']
+};
+
+function msg(el, text, ok) {
+  const n = $(el);
+  n.textContent = text;
+  n.className = 'msg show ' + (ok ? 'ok' : 'err');
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  if (res.status === 401) { location.href = '/login.html'; throw new Error('未登录'); }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || res.statusText);
+  return j;
+}
+
+let savedHasKey = false;
+
+async function load() {
+  const [me, ai] = await Promise.all([api('/api/account'), api('/api/account/ai')]);
+  const a = me.account;
+  $('accName').textContent = a.username;
+  $('accRole').textContent = a.role === 'admin' ? '管理员' : '普通用户';
+  $('accTasks').textContent = a.taskCount + ' / ' + (a.maxTasks || '不限');
+  $('accLogin').textContent = a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString() : '—';
+
+  const c = ai.ai;
+  savedHasKey = c.hasKey;
+  $('enabled').checked = c.enabled;
+  $('provider').value = c.provider || 'deepseek';
+  $('model').value = c.model || '';
+  $('baseUrl').value = c.baseUrl || '';
+  $('temp').value = c.temperature;
+  $('maxTokens').value = c.maxTokens;
+  $('supportImages').checked = c.supportImages;
+  $('apiKey').placeholder = c.hasKey ? '已保存，留空表示不改' : 'sk-...';
+  if (!c.hasKey) {
+    $('keyHint').textContent = '保存在服务器上，不会回传到浏览器';
+  } else if (c.ownKey || a.role === 'admin') {
+    $('keyHint').textContent = '已保存，留空表示不改';
+  } else {
+    $('keyHint').textContent = '当前在用管理员提供的 Key，建议换成自己的';
+  }
+}
+
+$('provider').addEventListener('change', (e) => {
+  const p = PRESET[e.target.value];
+  if (!p) return;
+  $('baseUrl').value = p[0];
+  $('model').value = p[1];
+});
+
+$('btnSaveAi').onclick = async () => {
+  const body = {
+    custom: true,
+    enabled: $('enabled').checked,
+    provider: $('provider').value,
+    baseUrl: $('baseUrl').value.trim(),
+    model: $('model').value.trim(),
+    temperature: Number($('temp').value) || 0.2,
+    maxTokens: Number($('maxTokens').value) || 1024,
+    supportImages: $('supportImages').checked
+  };
+  const key = $('apiKey').value.trim();
+  if (key) body.apiKey = key;
+  if (!$('baseUrl').value.trim()) return msg('aiMsg', '请先填接口地址');
+  if (!$('model').value.trim()) return msg('aiMsg', '请先填模型名称');
+  if (!$('enabled').checked) return msg('aiMsg', '请先勾选「启用 AI 答题」');
+  try {
+    const r = await api('/api/account/ai', { method: 'PUT', body: JSON.stringify(body) });
+    savedHasKey = savedHasKey || !!key;
+    $('apiKey').value = '';
+    $('apiKey').placeholder = '已保存，留空表示不改';
+    msg('aiMsg', `已保存，同步到 ${r.synced || 0} 个挂机号`, true);
+  } catch (e) {
+    msg('aiMsg', e.message);
+  }
+};
+
+$('btnTest').onclick = async () => {
+  const out = $('testOut');
+  out.textContent = '测试中…';
+  out.style.color = 'var(--muted)';
+  try {
+    const r = await api('/api/ai/test', {
+      method: 'POST',
+      body: JSON.stringify({
+        baseUrl: $('baseUrl').value.trim(),
+        model: $('model').value.trim(),
+        apiKey: $('apiKey').value.trim() || undefined
+      })
+    });
+    if (!r.ok) throw new Error(r.error || '失败');
+    out.textContent = '通了：' + r.answer + '（' + r.ms + 'ms）';
+    out.style.color = 'var(--ok)';
+  } catch (e) {
+    out.textContent = '失败：' + e.message;
+    out.style.color = 'var(--err)';
+  }
+};
+
+$('btnPwd').onclick = async () => {
+  const oldPassword = $('oldPwd').value;
+  const newPassword = $('newPwd').value;
+  if (!oldPassword || !newPassword) return msg('pwdMsg', '两个密码都要填');
+  if (newPassword.length < 6) return msg('pwdMsg', '新密码至少 6 位');
+  try {
+    await api('/api/account/password', { method: 'POST', body: JSON.stringify({ oldPassword, newPassword }) });
+    msg('pwdMsg', '密码已改，请用新密码重新登录', true);
+    setTimeout(() => (location.href = '/login.html'), 900);
+  } catch (e) {
+    msg('pwdMsg', e.message);
+  }
+};
+
+$('btnLogout').onclick = async () => {
+  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  location.href = '/login.html';
+};
+
+load().catch((e) => msg('aiMsg', e.message));
+</script>
+</body>
+</html>

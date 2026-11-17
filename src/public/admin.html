@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>管理后台 · OCS 控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%238ea8ff'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='%230a0b0c' font-family='sans-serif'%3EO%3C/text%3E%3C/svg%3E" />
+<link rel="stylesheet" href="/auth.css" />
+</head>
+<body>
+<div class="top">
+  <div class="mark">O</div>
+  <div class="name">管理后台</div>
+  <div class="spacer"></div>
+  <a href="/" style="font-size:12px">← 返回控制台</a>
+  <button class="sm" id="btnLogout">退出</button>
+</div>
+
+<div class="page">
+  <section class="panel">
+    <h2>邀请码</h2>
+    <p class="sub">用户拿着邀请码才能注册。默认一次一个，也可以生成多人共用的。</p>
+
+    <div class="grid2" style="align-items:end">
+      <div class="field" style="margin-bottom:0">
+        <label for="invUses">可用次数</label>
+        <input id="invUses" type="number" min="1" max="999" value="1" />
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label for="invDays">有效天数（0 = 永久）</label>
+        <input id="invDays" type="number" min="0" max="3650" value="7" />
+      </div>
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label for="invNote">备注（给谁用的，方便自己记）</label>
+      <input id="invNote" placeholder="例如：张三 / 班级群" maxlength="60" />
+    </div>
+    <div class="row" style="margin-bottom:16px">
+      <button class="primary" id="btnGen">生成邀请码</button>
+      <span class="hint" id="genOut"></span>
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>邀请码</th><th>已用 / 上限</th><th>有效期</th><th>备注</th><th>状态</th><th></th></tr>
+      </thead>
+      <tbody id="invBody"></tbody>
+    </table>
+    <p class="hint" id="invEmpty" style="margin-top:10px;display:none">还没有邀请码，先生成一个。</p>
+  </section>
+
+  <section class="panel">
+    <h2>用户</h2>
+    <p class="sub">配额是该账号最多能建几个挂机号，0 表示不限。停用后对方立刻掉线。</p>
+    <table>
+      <thead>
+        <tr><th>用户名</th><th>角色</th><th>挂机号</th><th>配额</th><th>上次登录</th><th>状态</th><th></th></tr>
+      </thead>
+      <tbody id="accBody"></tbody>
+    </table>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function api(path, opts) {
+  const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  if (res.status === 401) { location.href = '/login.html'; throw new Error('未登录'); }
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || res.statusText);
+  return j;
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function fmtDate(ts) {
+  if (!ts) return '永久';
+  return new Date(ts).toLocaleDateString();
+}
+
+async function copyText(t) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch (e) {}
+  // http 页面没有 clipboard API，退回老办法
+  const ta = document.createElement('textarea');
+  ta.value = t;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+  return ok;
+}
+
+async function loadInvites() {
+  const j = await api('/api/admin/invites');
+  const list = j.invites || [];
+  $('invEmpty').style.display = list.length ? 'none' : 'block';
+  $('invBody').innerHTML = list.map((i) => {
+    const full = i.used >= i.maxUses;
+    const expired = i.expiresAt && Date.now() > i.expiresAt;
+    const off = i.disabled || full || expired;
+    const state = i.disabled ? '已停用' : expired ? '已过期' : full ? '已用完' : '可用';
+    return `<tr>
+      <td><span class="code">${esc(i.code)}</span></td>
+      <td>${i.used} / ${i.maxUses}</td>
+      <td>${i.expiresAt ? fmtDate(i.expiresAt) : '永久'}</td>
+      <td style="color:var(--muted)">${esc(i.note || '')}</td>
+      <td><span class="tag ${off ? 'off' : 'on'}">${state}</span></td>
+      <td class="acts">
+        <button class="sm" data-copy="${esc(i.code)}">复制</button>
+        ${off ? '' : `<button class="sm" data-revoke="${esc(i.code)}">停用</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+
+  $('invBody').querySelectorAll('[data-copy]').forEach((b) => {
+    b.onclick = async () => {
+      const ok = await copyText(b.dataset.copy);
+      $('genOut').textContent = ok ? '已复制 ' + b.dataset.copy : '复制失败，请手动选中';
+    };
+  });
+  $('invBody').querySelectorAll('[data-revoke]').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('停用后这个邀请码就不能再注册了，确定？')) return;
+      await api('/api/admin/invites/' + b.dataset.revoke, { method: 'DELETE' });
+      loadInvites();
+    };
+  });
+}
+
+async function loadAccounts() {
+  const j = await api('/api/admin/accounts');
+  const list = j.accounts || [];
+  $('accBody').innerHTML = list.map((a) => {
+    const isAdmin = a.role === 'admin';
+    return `<tr>
+      <td><b>${esc(a.username)}</b></td>
+      <td>${isAdmin ? '管理员' : '用户'}</td>
+      <td>${a.taskCount} 个</td>
+      <td>${isAdmin ? '<span class="hint">不限</span>' : `<input type="number" min="0" max="999" value="${a.maxTasks}" data-quota="${a.id}" />`}</td>
+      <td>${a.lastLoginAt ? new Date(a.lastLoginAt).toLocaleString() : '—'}</td>
+      <td><span class="tag ${a.disabled ? 'off' : 'on'}">${a.disabled ? '已停用' : '正常'}</span></td>
+      <td class="acts">
+        ${isAdmin ? '' : `<button class="sm" data-save="${a.id}">保存配额</button>
+        <button class="sm" data-pwd="${a.id}">重置密码</button>
+        <button class="sm" data-toggle="${a.id}" data-on="${a.disabled ? '1' : ''}">${a.disabled ? '启用' : '停用'}</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+
+  $('accBody').querySelectorAll('[data-save]').forEach((b) => {
+    b.onclick = async () => {
+      const id = b.dataset.save;
+      const input = $('accBody').querySelector(`[data-quota="${id}"]`);
+      await api('/api/admin/accounts/' + id, { method: 'PUT', body: JSON.stringify({ maxTasks: Number(input.value) || 0 }) });
+      b.textContent = '已保存';
+      setTimeout(() => (b.textContent = '保存配额'), 1200);
+    };
+  });
+  $('accBody').querySelectorAll('[data-pwd]').forEach((b) => {
+    b.onclick = async () => {
+      const pwd = prompt('输入新的密码（至少 6 位）');
+      if (!pwd) return;
+      try {
+        await api('/api/admin/accounts/' + b.dataset.pwd, { method: 'PUT', body: JSON.stringify({ resetPassword: pwd }) });
+        alert('密码已重置，对方需要重新登录');
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
+  $('accBody').querySelectorAll('[data-toggle]').forEach((b) => {
+    b.onclick = async () => {
+      const enable = b.dataset.on === '1';
+      if (!enable && !confirm('停用后对方会立刻掉线，确定？')) return;
+      await api('/api/admin/accounts/' + b.dataset.toggle, { method: 'PUT', body: JSON.stringify({ disabled: !enable }) });
+      loadAccounts();
+    };
+  });
+}
+
+$('btnGen').onclick = async () => {
+  try {
+    const r = await api('/api/admin/invites', {
+      method: 'POST',
+      body: JSON.stringify({
+        maxUses: Number($('invUses').value) || 1,
+        days: Number($('invDays').value) || 0,
+        note: $('invNote').value.trim()
+      })
+    });
+    const ok = await copyText(r.invite.code);
+    $('genOut').textContent = `已生成 ${r.invite.code}` + (ok ? '，已复制' : '');
+    $('invNote').value = '';
+    loadInvites();
+  } catch (e) {
+    $('genOut').textContent = e.message;
+  }
+};
+
+$('btnLogout').onclick = async () => {
+  await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  location.href = '/login.html';
+};
+
+Promise.all([loadInvites(), loadAccounts()]).catch((e) => alert(e.message));
+</script>
+</body>
+</html>

@@ -83,6 +83,13 @@ const DEFAULTS = {
     systemPrompt: '',
     extraPrompt: ''
   },
+  // 多账号：注册、邀请码、每个账号能建几个挂机号
+  auth: {
+    allowRegister: true,
+    defaultMaxTasks: 3,
+    sessionDays: 30,
+    inviteDays: 7
+  },
   // 上次关闭时的现场：谁被选中、停在哪个地址、当时是在跑还是停着。
   // 服务启动时按这个恢复，前端也用 lastUserId 选中同一个人。
   session: {

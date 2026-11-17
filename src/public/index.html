@@ -36,6 +36,8 @@
     --focus:0 0 0 3px rgba(142,168,255,.2);
   }
   *{box-sizing:border-box}
+  /* hidden 属性要压过 a.me / button 上的 display，否则普通用户还能看到管理入口 */
+  [hidden]{display:none!important}
   html,body{height:100%}
   body{
     margin:0;
@@ -137,6 +139,15 @@
   .pill.res:hover{background:var(--surface-3);color:var(--text);border-color:var(--line-strong)}
   .pill.res b{font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums}
   .pill.res.hot b{color:#f0c76e}
+  /* 顶栏右侧的账号入口：和 pill 同一档视觉，但可以点 */
+  a.me{
+    display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 9px;
+    border-radius:7px;border:1px solid var(--line);background:var(--surface-2);
+    font-size:11.5px;color:var(--text-2);text-decoration:none;flex:0 0 auto;
+    max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  a.me:hover{background:var(--surface-3);border-color:var(--line-strong);color:var(--text);text-decoration:none}
+  a.me .dot{width:5px;height:5px}
   .dot{width:6px;height:6px;border-radius:50%;background:var(--faint);flex-shrink:0}
   .dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(74,222,128,.14)}
   .dot.busy{background:var(--warn);box-shadow:0 0 0 3px rgba(251,191,36,.14);animation:pulse 2s ease-in-out infinite}
@@ -533,6 +544,10 @@
     <span class="cam-badge" id="camBadge" hidden>0</span>
   </button>
   <div class="spacer"></div>
+  <a class="me" id="acctLink" href="/account.html" title="账号设置 / 我的 AI 配置">
+    <span class="dot on"></span><span id="acctName">账号</span>
+  </a>
+  <a class="me" id="adminLink" href="/admin.html" hidden title="邀请码 / 用户管理">管理</a>
   <button id="btnConfig">配置</button>
   <button class="danger" id="btnStop">
     <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -1048,6 +1063,10 @@ function sendInput(body) {
 function api(path, opts) {
   return fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts))
     .then(async (res) => {
+      if (res.status === 401) {
+        location.href = '/login.html';
+        throw new Error('请先登录');
+      }
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error || res.statusText);
@@ -1196,6 +1215,17 @@ async function refresh() {
   }
 
   if (!Array.isArray(state.users)) state.users = [];
+
+  // 顶栏：当前账号、管理员入口；普通用户看不到全局配置
+  if (state.account) {
+    const nm = el('acctName');
+    if (nm.textContent !== state.account.username) nm.textContent = state.account.username;
+    el('acctLink').href = '/account.html';
+  }
+  el('adminLink').hidden = !state.isAdmin;
+  el('btnConfig').hidden = !state.isAdmin;
+  // 资源面板读的是整机进程和所有人的目录，只给管理员看
+  el('resPill').hidden = !state.isAdmin;
 
   // 选中项被删掉或还没选时，自动落到第一个有页面的用户上
   if (!state.users.some((t) => t.id === selectedTaskId)) {
@@ -2082,8 +2112,8 @@ async function openUserAi(id) {
   el('uaiTestResult').textContent = '';
   el('uaiSaveHint').textContent = '';
   try {
-    // 顺手把全局配置拿回来：勾上「单独配置」时用它的值当起点，不用从空表单开始
-    loadConfig().catch(() => {});
+    // 全局配置只有管理员能取；普通用户直接用作后端返回的账户默认值当起点
+    if (state && state.isAdmin) loadConfig().catch(() => {});
     const r = await api('/api/users/' + encodeURIComponent(id) + '/ai');
     const a = r.ai;
     const custom = !!a.custom;
@@ -2095,18 +2125,19 @@ async function openUserAi(id) {
     el('uaiModel').value = a.model || r.global.model || '';
     el('uaiKey').value = '';
     el('uaiClearKey').checked = false;
+    const scope = r.global.scope === 'account' ? '账户默认' : '全局';
     el('uaiKey').placeholder = a.ownKey
       ? '已保存（留空不改）'
-      : (r.global.hasKey ? '留空则用全局的 Key' : 'sk-...');
+      : (r.global.hasKey ? `留空则用${scope}的 Key` : 'sk-...');
     el('uaiKeyHint').textContent = a.ownKey
       ? '已有独立 Key；留空＝不修改，要清空请勾选下面的复选框'
-      : (r.global.hasKey ? '没填就用全局设置里的 Key' : '只写在本机 data 目录，不回传到控制台页面');
+      : (r.global.hasKey ? `没填就用${scope}里的 Key` : '只写在本机 data 目录，不回传到控制台页面');
     el('uaiTemp').value = a.temperature ?? 0.2;
     el('uaiMaxTokens').value = a.maxTokens ?? 1024;
     el('uaiImages').checked = a.supportImages !== false;
     el('uaiGlobalHint').innerHTML = a.custom
       ? uaiEffectiveText(r)
-      : `<b>${escapeHtml(t ? t.name : '用户')}</b> 现在跟随全局：` +
+      : `<b>${escapeHtml(t ? t.name : '用户')}</b> 现在跟随${scope}：` +
         `${escapeHtml(r.effective.model || '未填模型')} · ${escapeHtml(r.effective.baseUrl || '未填地址')}。` +
         '勾选上面的「单独配置」可以给他换成别的服务商或 Key。';
     syncUaiState();
