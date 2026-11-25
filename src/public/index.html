@@ -692,6 +692,41 @@
         <input type="checkbox" id="aiImages" />
         <label for="aiImages">允许发送图片（模型需支持视觉）</label>
       </div>
+      <div class="field switch" style="margin-top:14px">
+        <input type="checkbox" id="ensEnabled" />
+        <label for="ensEnabled"><b>多轮复核</b>：同一道题换角度问多次，票不齐时再让模型复核一遍</label>
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>档位</label>
+          <select id="ensPreset">
+            <option value="fast">快速 · 2 轮</option>
+            <option value="balanced">均衡 · 3 轮 + 复核</option>
+            <option value="strict">严格 · 5 轮 + 复核 + 证伪</option>
+            <option value="custom">自定义</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>轮数（1~5）</label>
+          <input id="ensRounds" type="number" min="1" max="5" step="1" />
+        </div>
+      </div>
+      <div class="field" style="display:flex;gap:18px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:7px;margin:0;color:var(--text-2)">
+          <input type="checkbox" id="ensVerify" style="width:auto;height:auto" /> 分歧时复核
+        </label>
+        <label style="display:flex;align-items:center;gap:7px;margin:0;color:var(--text-2)">
+          <input type="checkbox" id="ensFalsify" style="width:auto;height:auto" /> 反方证伪
+        </label>
+        <label style="display:flex;align-items:center;gap:7px;margin:0;color:var(--text-2)">
+          分歧过大时
+          <select id="ensLow" style="width:auto">
+            <option value="best">用最高票</option>
+            <option value="hold">留空不作答</option>
+          </select>
+        </label>
+      </div>
+      <div class="hint" id="ensHint" style="margin-top:6px"></div>
       <div class="row">
         <button id="btnTestAi">测试连接</button>
         <span id="aiTestResult" class="hint"></span>
@@ -1001,6 +1036,13 @@ const PRESETS = {
   openrouter:{baseUrl:'https://openrouter.ai/api/v1',model:'openai/gpt-4o-mini'},
   ollama:{baseUrl:'http://127.0.0.1:11434/v1',model:'qwen2.5:7b'},
   custom:{baseUrl:'',model:''}
+};
+
+// 多轮复核档位：和 userscript 里的 AI_ENSEMBLE_PRESETS 保持一致
+const ENS_PRESETS = {
+  fast:{rounds:2,verify:true,falsify:false,budgetSeconds:30},
+  balanced:{rounds:3,verify:true,falsify:false,budgetSeconds:60},
+  strict:{rounds:5,verify:true,falsify:true,budgetSeconds:110}
 };
 
 const $ = (s) => document.querySelector(s);
@@ -1908,6 +1950,14 @@ function fillConfig() {
   el('aiTemp').value = c.ai.temperature ?? 0.2;
   el('aiMaxTokens').value = c.ai.maxTokens ?? 1024;
   el('aiImages').checked = !!c.ai.supportImages;
+  const ens = c.ai.ensemble || {};
+  el('ensEnabled').checked = !!ens.enabled;
+  el('ensPreset').value = ENS_PRESETS[ens.preset] ? ens.preset : (ens.preset === 'custom' ? 'custom' : 'balanced');
+  el('ensRounds').value = ens.rounds ?? 3;
+  el('ensVerify').checked = ens.verify !== false;
+  el('ensFalsify').checked = !!ens.falsify;
+  el('ensLow').value = ens.lowConfidence === 'hold' ? 'hold' : 'best';
+  ensHint();
   el('cryptoTextMode').value = (c.ocs && c.ocs.cryptoText && c.ocs.cryptoText.mode) || 'font';
   el('autoStart').checked = !!(c.ocs && c.ocs.autoStart);
   el('autoRun').checked = !!(c.server && c.server.autoRun);
@@ -1930,6 +1980,26 @@ function fillConfig() {
   el('saverMedia').checked = !!sv.blockMedia;
   el('saverBlocklist').value = (sv.blocklist || []).join('\n');
 }
+
+function ensHint() {
+  const r = Math.max(1, Number(el('ensRounds').value) || 1);
+  const extra = (el('ensVerify').checked && r > 1 ? 1 : 0) + (el('ensFalsify').checked && r > 1 ? 1 : 0);
+  el('ensHint').textContent =
+    '每题最多 ' + (r + extra) + ' 次 AI 请求；多轮之间换提问角度（排除法 / 教材口径 / 反证），不只是重复问同一句。图片题固定只跑 1 轮。';
+}
+el('ensPreset').onchange = () => {
+  const p = ENS_PRESETS[el('ensPreset').value];
+  if (p) {
+    el('ensRounds').value = p.rounds;
+    el('ensVerify').checked = p.verify;
+    el('ensFalsify').checked = p.falsify;
+  }
+  ensHint();
+};
+['ensRounds', 'ensVerify', 'ensFalsify'].forEach((id) => {
+  el(id).addEventListener('input', ensHint);
+  el(id).addEventListener('change', ensHint);
+});
 
 el('aiProvider').onchange = () => {
   const p = PRESETS[el('aiProvider').value];
@@ -1983,7 +2053,17 @@ el('btnSave').onclick = async () => {
       apiKey: el('aiKey').value.trim(),
       temperature: Number(el('aiTemp').value),
       maxTokens: Number(el('aiMaxTokens').value),
-      supportImages: el('aiImages').checked
+      supportImages: el('aiImages').checked,
+      ensemble: {
+        enabled: el('ensEnabled').checked,
+        preset: el('ensPreset').value,
+        rounds: Math.max(1, Math.min(5, Number(el('ensRounds').value) || 3)),
+        verify: el('ensVerify').checked,
+        falsify: el('ensFalsify').checked,
+        budgetSeconds: ((ENS_PRESETS[el('ensPreset').value] || {}).budgetSeconds) || ((cfgCache.ai.ensemble || {}).budgetSeconds) || 60,
+        imageRounds: (cfgCache.ai.ensemble || {}).imageRounds || 1,
+        lowConfidence: el('ensLow').value
+      }
     },
     browser: (() => {
       const m = /^\s*(\d{3,4})\s*[x×*]\s*(\d{3,4})\s*$/i.exec(el('browserSize').value || '');

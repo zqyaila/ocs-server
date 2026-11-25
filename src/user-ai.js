@@ -24,7 +24,8 @@ const OVERRIDABLE = [
   'requestType',
   'retry',
   'systemPrompt',
-  'extraPrompt'
+  'extraPrompt',
+  'ensemble'
 ];
 
 // 这几个字段填空等于「没填」，应该回落到全局；其余字段（含布尔 false）照原样覆盖
@@ -45,6 +46,11 @@ function overlay(base, own) {
   for (const key of OVERRIDABLE) {
     const v = own[key];
     if (v === undefined || v === null) continue;
+    // 多轮复核是一小组参数，按字段合并：用户只改了轮数，不该把「复核」丢掉
+    if (key === 'ensemble' && typeof v === 'object' && !Array.isArray(v)) {
+      out[key] = Object.assign({}, out[key] || {}, v);
+      continue;
+    }
     if (typeof v === 'string') {
       const s = v.trim();
       if (!s && BLANK_FALLBACK.has(key)) continue;
@@ -58,7 +64,7 @@ function overlay(base, own) {
 
 // 普通账号能用全局配置里的「参数类」字段，但接口地址、模型、Key 必须自己填，
 // 否则会白嫖管理员的额度、也能从 hasKey 看出人家配没配
-const SAFE_KEYS = ['temperature', 'maxTokens', 'timeoutSeconds', 'requestType', 'retry', 'systemPrompt', 'extraPrompt'];
+const SAFE_KEYS = ['temperature', 'maxTokens', 'timeoutSeconds', 'requestType', 'retry', 'systemPrompt', 'extraPrompt', 'ensemble'];
 
 function safeBase(globalAi) {
   const g = globalAi && typeof globalAi === 'object' ? globalAi : {};
@@ -101,6 +107,28 @@ function summarize(globalAi, user, account) {
   };
 }
 
+/** 多轮复核参数：前端传什么都要夹回合法区间，避免 5 轮变 50 轮把额度刷爆 */
+function sanitizeEnsemble(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const num = (v, d, min, max) => {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return d;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  };
+  const out = {};
+  if (input.enabled !== undefined) out.enabled = !!input.enabled;
+  if (input.preset !== undefined) {
+    out.preset = ['fast', 'balanced', 'strict', 'custom'].includes(input.preset) ? input.preset : 'custom';
+  }
+  if (input.rounds !== undefined) out.rounds = num(input.rounds, 3, 1, 5);
+  if (input.verify !== undefined) out.verify = !!input.verify;
+  if (input.falsify !== undefined) out.falsify = !!input.falsify;
+  if (input.budgetSeconds !== undefined) out.budgetSeconds = num(input.budgetSeconds, 60, 15, 300);
+  if (input.imageRounds !== undefined) out.imageRounds = num(input.imageRounds, 1, 1, 3);
+  if (input.lowConfidence !== undefined) out.lowConfidence = input.lowConfidence === 'hold' ? 'hold' : 'best';
+  return Object.keys(out).length ? out : null;
+}
+
 /**
  * 把前端提交的内容整理成要落盘的 user.ai。
  * Key 留空时保留原来的 —— 前端只显示「已保存」，不把明文回传。
@@ -117,6 +145,9 @@ function sanitize(patch, prev) {
   if (p.temperature !== undefined) out.temperature = Number(p.temperature);
   if (p.maxTokens !== undefined) out.maxTokens = Math.max(128, Number(p.maxTokens) || 1024);
   if (p.supportImages !== undefined) out.supportImages = !!p.supportImages;
+
+  const ens = sanitizeEnsemble(p.ensemble);
+  if (ens) out.ensemble = ens;
 
   const key = p.apiKey === undefined ? undefined : String(p.apiKey || '').trim();
   if (key) out.apiKey = key;

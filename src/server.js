@@ -717,6 +717,8 @@ const server = http.createServer(async (req, res) => {
           temperature: Number(eff.temperature ?? 0.2),
           maxTokens: Number(eff.maxTokens ?? 1024),
           supportImages: eff.supportImages !== false,
+          // 多轮复核是参数类设置，普通账号也继承全局，这里一并回显
+          ensemble: eff.ensemble && typeof eff.ensemble === 'object' ? eff.ensemble : { enabled: false },
           hasKey: !!eff.apiKey,
           ownKey: !!(req.account.ai && req.account.ai.apiKey)
         },

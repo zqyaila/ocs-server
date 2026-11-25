@@ -4503,8 +4503,88 @@ var __publicField = (obj, key, value) => {
     supportImages: true,
     retry: 1,
     systemPrompt: AI_ANSWERER_DEFAULT_SYSTEM_PROMPT,
-    extraPrompt: ""
+    extraPrompt: "",
+    // 多轮复核：单轮答不对多半是「盲区 / 口径 / 否定词看漏」，多问几个角度能救回一部分
+    ensemble: {
+      enabled: false,
+      preset: "balanced",
+      rounds: 3,
+      verify: true,
+      falsify: false,
+      budgetSeconds: 60,
+      imageRounds: 1,
+      lowConfidence: "best"
+    }
   };
+  /**
+   * 多轮复核的档位。
+   * 考试题量大、有倒计时，所以默认给「均衡」：3 轮 + 分歧复核，一道题大约 3~4 次请求。
+   * 觉得还不够准就上「严格」：5 轮 + 复核 + 反方证伪，请求数翻倍、耗时也翻倍。
+   */
+  const AI_ENSEMBLE_PRESETS = {
+    fast: { rounds: 2, verify: true, falsify: false, budgetSeconds: 30 },
+    balanced: { rounds: 3, verify: true, falsify: false, budgetSeconds: 60 },
+    strict: { rounds: 5, verify: true, falsify: true, budgetSeconds: 110 }
+  };
+  /**
+   * 每轮的提问角度。光靠调温度制造不出真正的多样性 —— 同一个问题原样再问，
+   * 模型大概率复读同一个错误；换个视角（排除法 / 教材口径 / 反向假设）才容易翻案。
+   */
+  const AI_ENSEMBLE_LENSES = [
+    { name: "直答", temperature: null, hint: "" },
+    {
+      name: "排除法",
+      temperature: 0.45,
+      hint: "先在心里逐个排除明显错误的选项，再从剩下的里选出唯一正确的；多选题只保留有把握的。"
+    },
+    {
+      name: "教材口径",
+      temperature: 0.7,
+      hint: "以该课程通用教材与权威定义的表述为准，特别注意题干里的「最」「主要」「不正确」「除了」等限定词。"
+    },
+    {
+      name: "反向假设",
+      temperature: 0.85,
+      hint: "逐一假设每个选项为真，找出与其他选项或学科常识相矛盾的那一个，剩下的就是答案。"
+    },
+    {
+      name: "拆条件",
+      temperature: 0.3,
+      hint: "先把题干拆成若干可判定的小条件，再逐条核对每个选项是否同时满足全部条件。"
+    }
+  ];
+  /** 多轮模式下追加给模型的作答要求（不动用户自己写的系统提示词） */
+  const AI_ENSEMBLE_SYSTEM_APPEND = [
+    "【多轮复核模式】",
+    "- 先在心里完成完整推理，只输出最终结论，不要展示过程；",
+    "- 留意题干中的否定词与限定词（不正确 / 除了 / 最 / 主要 / 至少）；",
+    "- 若两个选项表述等价，选与题干问法最贴切的那个；",
+    '- 在 JSON 里额外给出 "confidence"（0 到 1 的小数），表示你对该答案的把握。'
+  ].join("\n");
+  function clampNumber(value, fallback, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return fallback;
+    }
+    return Math.min(max, Math.max(min, Math.round(n)));
+  }
+  /** 把配置里的 ensemble 段补齐并夹到合法区间，脏数据不会把流程带崩 */
+  function normalizeEnsembleConfig(value) {
+    const raw = value && typeof value === "object" ? value : {};
+    const presetName = AI_ENSEMBLE_PRESETS[raw.preset] ? raw.preset : raw.preset === "custom" ? "custom" : "balanced";
+    const preset = AI_ENSEMBLE_PRESETS[raw.preset] || AI_ENSEMBLE_PRESETS.balanced;
+    const boolWith = (v, d) => (v === undefined || v === null ? d : Boolean(v));
+    return {
+      enabled: boolWith(raw.enabled, false),
+      preset: presetName,
+      rounds: clampNumber(raw.rounds, preset.rounds, 1, 5),
+      verify: boolWith(raw.verify, preset.verify),
+      falsify: boolWith(raw.falsify, preset.falsify),
+      budgetSeconds: clampNumber(raw.budgetSeconds, preset.budgetSeconds, 15, 300),
+      imageRounds: clampNumber(raw.imageRounds, 1, 1, 3),
+      lowConfidence: raw.lowConfidence === "hold" ? "hold" : "best"
+    };
+  }
   function createDefaultAiAnswererConfig() {
     return JSON.parse(JSON.stringify(AI_ANSWERER_DEFAULT_CONFIG));
   }
@@ -4526,6 +4606,7 @@ var __publicField = (obj, key, value) => {
     config.systemPrompt = String(config.systemPrompt || AI_ANSWERER_DEFAULT_SYSTEM_PROMPT);
     config.extraPrompt = String(config.extraPrompt || "");
     config.enabled = Boolean(config.enabled);
+    config.ensemble = normalizeEnsembleConfig(config.ensemble);
     return config;
   }
   function isLocalAiEndpoint(url) {
@@ -4903,7 +4984,487 @@ var __publicField = (obj, key, value) => {
     } catch (e) {
     }
   }
+  /* ==================== AI 多轮复核（ensemble） ====================
+   * 单轮作答大概八十分，错的通常是三类：知识盲区、教材口径不一致、
+   * 题干否定词/限定词看漏。这类错误有个共同点 —— 换个问法再问一次，
+   * 模型经常能答对；但同一个问题原样再问，它又会复读同一个错误。
+   *
+   * 所以这里不是简单「多问几遍取多数」，而是：
+   *   1. 多视角采样：每轮换一个提问角度（直答 / 排除法 / 教材口径 /
+   *      反向假设 / 拆条件），温度跟着变，制造真正的多样性；
+   *   2. 加权投票：按「规范化后的最终提交值」计票，票数相同比置信度；
+   *   3. 分歧复核：票不齐时，把候选交给模型当阅卷老师重新审题，
+   *      并明确告诉它「票数高不等于对」，避免从众；
+   *   4. 反方证伪（可选）：对最终答案专门去找反例，找不出才算确认。
+   *
+   * 全票一致时直接采纳、不做复核，大多数题只花 2~3 次请求。
+   */
+  const AI_ENSEMBLE_MAX_CONCURRENCY = 2;
+  /** 归一化文本用于比票：去空白标点、转小写 */
+  function ensembleNormText(value) {
+    return String(value == null ? "" : value)
+      .replace(/\s+/g, "")
+      .replace(/[，。、；;,.!?！？：:"'“”‘’（）()【】\[\]{}<>《》]/g, "")
+      .toLowerCase();
+  }
+  /**
+   * 投票键 —— 直接用「最终要提交给页面的值」做归一，
+   * 避免出现「票投对了、映射到选项时又错了」这种两层错位。
+   */
+  function ensembleVoteKey(env, answer) {
+    const text = String(answer || "").trim();
+    if (!text) {
+      return "";
+    }
+    const sep = getAnswerSeparatorChar();
+    const parts = text.split(sep).map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) {
+      return "";
+    }
+    if (env.type === "multiple") {
+      return parts.map(ensembleNormText).sort().join("|");
+    }
+    if (env.type === "completion" || env.type === "fill-blank") {
+      return parts.map(ensembleNormText).join("|");
+    }
+    const head = ensembleNormText(parts[0]);
+    if (env.type === "judgement") {
+      if (/^(正确|对|是|√|true|yes|t|a|1)$/.test(head)) {
+        return "T";
+      }
+      if (/^(错误|错|不对|否|×|false|no|f|b|0)$/.test(head)) {
+        return "F";
+      }
+    }
+    return head;
+  }
+  /** 从模型输出里抠 answer / confidence / reason */
+  function parseEnsembleSample(content) {
+    const raw = String(content || "").trim();
+    const cleaned = raw.replace(/^```[a-zA-Z]*\s*/, "").replace(/```$/, "").trim();
+    const out = { answer: "", confidence: 0.6, reason: "" };
+    const jsonText = (cleaned.match(/\{[\s\S]*\}/) || [])[0];
+    if (jsonText) {
+      try {
+        const obj = JSON.parse(jsonText);
+        const value =
+          obj.answer !== void 0 ? obj.answer :
+          obj.answers !== void 0 ? obj.answers :
+          obj.final !== void 0 ? obj.final :
+          obj.result !== void 0 ? obj.result :
+          obj.option !== void 0 ? obj.option :
+          obj.options !== void 0 ? obj.options :
+          obj["答案"];
+        if (Array.isArray(value)) {
+          out.answer = value.map((item) => String(item).trim()).filter(Boolean).join("#");
+        } else if (value !== void 0 && value !== null) {
+          out.answer = String(value).trim();
+        }
+        out.reason = String(obj.reason || obj.analysis || obj.explanation || obj["解析"] || "");
+        let conf = Number(obj.confidence !== void 0 ? obj.confidence : obj["置信度"]);
+        if (Number.isFinite(conf)) {
+          if (conf > 1 && conf <= 100) {
+            conf = conf / 100;
+          }
+          out.confidence = Math.min(1, Math.max(0, conf));
+        }
+        return out;
+      } catch (e) {
+        // JSON 坏了就走下面的纯文本兜底
+      }
+    }
+    out.answer = cleaned
+      .replace(/^(最终答案|正确答案|答案|answer)\s*[:：]\s*/i, "")
+      .replace(/^[`"'「『]+/, "")
+      .replace(/[`"'」』]+$/, "")
+      .trim();
+    return out;
+  }
+  /** 并发上限 map，单轮异常不影响其它轮 */
+  async function ensembleMapLimit(items, limit, fn) {
+    const out = new Array(items.length);
+    let cursor = 0;
+    const size = Math.max(1, Math.min(limit, items.length));
+    const workers = [];
+    for (let w = 0; w < size; w++) {
+      workers.push(
+        (async () => {
+          while (true) {
+            const index = cursor++;
+            if (index >= items.length) {
+              return;
+            }
+            try {
+              out[index] = await fn(items[index], index);
+            } catch (error) {
+              out[index] = { ok: false, index, error: (error && error.message) || String(error) };
+            }
+          }
+        })()
+      );
+    }
+    await Promise.all(workers);
+    return out;
+  }
+  /**
+   * 跑一轮。返回结构化样本，失败时 ok=false 而不是抛错 ——
+   * 一道题里挂一两轮很常见（限流、超时），只要还有别的轮次能投票就不该整题失败。
+   */
+  async function askAiEnsembleRound(cfg, env, lens, roundIndex, deadline, capSeconds) {
+    const remainMs = Math.max(6000, deadline - Date.now());
+    const budgetSeconds = Math.max(6, Math.floor(remainMs / 1000));
+    const roundCfg = Object.assign({}, cfg, {
+      temperature: lens.temperature === null ? cfg.temperature : lens.temperature,
+      // 单轮不能把整题预算吃光：按「预算 ÷ 轮数」给每轮留余量
+      timeoutSeconds: Math.max(6, Math.min(budgetSeconds, capSeconds || budgetSeconds)),
+      extraPrompt: [cfg.extraPrompt, lens.hint, AI_ENSEMBLE_SYSTEM_APPEND].filter(Boolean).join("\n")
+    });
+    const messages = buildAiAnswererMessages(roundCfg, env);
+    const startedAt = Date.now();
+    const run = async (useCfg) => requestAiAnswererCompletion(useCfg, buildAiAnswererMessages(useCfg, env));
+    try {
+      let content;
+      try {
+        content = await run(roundCfg);
+      } catch (error) {
+        // 有些推理模型（deepseek-reasoner、o1 系）不接受 temperature，去掉再来一次
+        const msg = String((error && error.message) || error || "");
+        if (/temperature/i.test(msg) && roundCfg.temperature !== void 0) {
+          const plain = Object.assign({}, roundCfg);
+          delete plain.temperature;
+          content = await run(plain);
+        } else {
+          throw error;
+        }
+      }
+      const sample = parseEnsembleSample(content);
+      const formatted = formatAiAnswererAnswer(sample.answer, env, cfg);
+      const key = ensembleVoteKey(env, formatted);
+      if (!key) {
+        return { ok: false, index: roundIndex, lens: lens.name, error: "未解析出答案", raw: String(content).slice(0, 200) };
+      }
+      logAi(
+        "[AI 多轮] 第 " + (roundIndex + 1) + " 轮 · " + lens.name + " → " + String(formatted).slice(0, 40) +
+          "（置信 " + sample.confidence.toFixed(2) + "，" + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s）"
+      );
+      return {
+        ok: true,
+        index: roundIndex,
+        lens: lens.name,
+        key,
+        label: String(formatted),
+        confidence: sample.confidence,
+        reason: sample.reason,
+        raw: String(content).slice(0, 300)
+      };
+    } catch (error) {
+      const msg = (error && error.message) || String(error);
+      logAi("[AI 多轮] 第 " + (roundIndex + 1) + " 轮 · " + lens.name + " 失败：" + msg, "warn");
+      return { ok: false, index: roundIndex, lens: lens.name, error: msg };
+    }
+  }
+  /** 计票：票数 → 置信度和 → 出现顺序 */
+  function ensembleTally(samples) {
+    const map = new Map();
+    let valid = 0;
+    for (const sample of samples) {
+      if (!sample || !sample.ok || !sample.key) {
+        continue;
+      }
+      valid += 1;
+      let slot = map.get(sample.key);
+      if (!slot) {
+        slot = { key: sample.key, label: sample.label, count: 0, score: 0, firstAt: sample.index, reasons: [] };
+        map.set(sample.key, slot);
+      }
+      slot.count += 1;
+      slot.score += Number.isFinite(sample.confidence) ? sample.confidence : 0.6;
+      if (sample.reason) {
+        slot.reasons.push(sample.reason);
+      }
+    }
+    const list = [...map.values()].sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      if (b.score !== a.score) return b.score - a.score;
+      return a.firstAt - b.firstAt;
+    });
+    const top = list[0] || null;
+    const second = list[1] || null;
+    return {
+      list,
+      valid,
+      top,
+      second,
+      agree: top && valid ? top.count / valid : 0,
+      margin: top && second ? top.count - second.count : top ? top.count : 0
+    };
+  }
+  /** 复核提示词：把候选交给「阅卷老师」，故意不给票数，避免从众 */
+  function buildEnsembleCriticMessages(cfg, env, candidates) {
+    const typeName = AI_ANSWERER_QUESTION_TYPES[env.type] || AI_ANSWERER_QUESTION_TYPES.unknown;
+    const title = String(env.suggestion_title || env.title || "").trim();
+    const optionsText = String(env.suggestion_options || env.options || "").trim();
+    const lines = ["【题型】" + typeName, "【题目】" + title];
+    if (optionsText) {
+      lines.push("【选项】\n" + optionsText);
+    }
+    lines.push("");
+    lines.push("下面是几位独立作答者给出的结果（顺序不代表任何倾向，出现次数也不代表正确）：");
+    candidates.forEach((item, index) => {
+      lines.push(index + 1 + ". " + item.label);
+    });
+    lines.push("");
+    lines.push("请作为该科目的阅卷老师，独立重新审题：");
+    lines.push("1. 逐个判断上面的结果是否正确，错在哪里；");
+    lines.push("2. 不要因为某个结果「眼熟」或出现次数多就选它，只按题目和学科知识判断；");
+    lines.push("3. 如果它们全都错，直接给出你认为正确的答案。");
+    lines.push('只输出一行 JSON：{"final":"候选编号或答案原文","verdicts":["对/错 + 一句理由"],"reason":"一句话结论","confidence":0.0}');
+    const systemContent = [String(cfg.systemPrompt || "").trim(), AI_ENSEMBLE_SYSTEM_APPEND].filter(Boolean).join("\n\n");
+    const messages = [];
+    if (systemContent) {
+      messages.push({ role: "system", content: systemContent });
+    }
+    messages.push({ role: "user", content: lines.join("\n") });
+    return messages;
+  }
+  /** 复核一次；最终答案仍要做一次 format + 投票键校验 */
+  async function askAiEnsembleCritic(cfg, env, candidates, deadline) {
+    const remainMs = Math.max(6000, deadline - Date.now());
+    const runCfg = Object.assign({}, cfg, {
+      temperature: 0.1,
+      timeoutSeconds: Math.max(6, Math.min(Math.floor(remainMs / 1000), Number(cfg.timeoutSeconds) || 60))
+    });
+    try {
+      const content = await requestAiAnswererCompletion(runCfg, buildEnsembleCriticMessages(runCfg, env, candidates));
+      const parsed = parseEnsembleSample(content);
+      const raw = String(parsed.answer || "").trim();
+      if (!raw) {
+        return { ok: false, error: "复核未给出结论" };
+      }
+      // 1) 返回候选编号
+      const asIndex = /^[1-9]$/.exec(raw.replace(/[^\d]/g, ""));
+      if (/^\s*[\[\(（]?[1-9][\]\)）]?\s*$/.test(raw) && asIndex && Number(asIndex[0]) <= candidates.length) {
+        const picked = candidates[Number(asIndex[0]) - 1];
+        return { ok: true, key: picked.key, label: picked.label, confidence: parsed.confidence, reason: parsed.reason, raw: String(content).slice(0, 300) };
+      }
+      // 2) 返回候选原文
+      const wantKey = ensembleVoteKey(env, raw);
+      const hit = candidates.find((c) => c.key === wantKey);
+      if (hit) {
+        return { ok: true, key: hit.key, label: hit.label, confidence: parsed.confidence, reason: parsed.reason, raw: String(content).slice(0, 300) };
+      }
+      // 3) 都不匹配 —— 复核给出了一个全新答案，格式化后接受
+      const formatted = formatAiAnswererAnswer(parsed.answer, env, cfg);
+      const key = ensembleVoteKey(env, formatted);
+      if (!key) {
+        return { ok: false, error: "复核结论无法解析：" + raw.slice(0, 60) };
+      }
+      return { ok: true, key, label: String(formatted), fresh: true, confidence: parsed.confidence, reason: parsed.reason, raw: String(content).slice(0, 300) };
+    } catch (error) {
+      return { ok: false, error: (error && error.message) || String(error) };
+    }
+  }
+  /** 反方证伪：专门找反例，找不到才 CONFIRM */
+  async function askAiEnsembleFalsify(cfg, env, answer, deadline) {
+    const remainMs = Math.max(6000, deadline - Date.now());
+    const runCfg = Object.assign({}, cfg, {
+      temperature: 0.2,
+      timeoutSeconds: Math.max(6, Math.min(Math.floor(remainMs / 1000), Number(cfg.timeoutSeconds) || 60))
+    });
+    const typeName = AI_ANSWERER_QUESTION_TYPES[env.type] || AI_ANSWERER_QUESTION_TYPES.unknown;
+    const title = String(env.suggestion_title || env.title || "").trim();
+    const optionsText = String(env.suggestion_options || env.options || "").trim();
+    const lines = ["【题型】" + typeName, "【题目】" + title];
+    if (optionsText) {
+      lines.push("【选项】\n" + optionsText);
+    }
+    lines.push("", "【待验证的答案】" + answer);
+    lines.push("", "请只做一件事：尽力找出这个答案是错的证据（反例、定义冲突、教材口径差异、题干限定词被忽略）。");
+    lines.push("如果它本身是对的，不要为了挑错而编造问题，直接确认。");
+    lines.push('只输出一行 JSON：找不到问题 {"verdict":"CONFIRM"}；确实错了 {"verdict":"WRONG","better":"更正确的答案","reason":"依据"}');
+    const systemContent = [String(cfg.systemPrompt || "").trim(), AI_ENSEMBLE_SYSTEM_APPEND].filter(Boolean).join("\n\n");
+    try {
+      const messages = [{ role: "system", content: systemContent }, { role: "user", content: lines.join("\n") }];
+      const content = await requestAiAnswererCompletion(runCfg, messages);
+      const jsonText = (String(content).match(/\{[\s\S]*\}/) || [])[0];
+      if (!jsonText) {
+        return { ok: false, error: "证伪结果不是 JSON" };
+      }
+      const obj = JSON.parse(jsonText);
+      const verdict = String(obj.verdict || obj["结论"] || "").toUpperCase();
+      if (verdict !== "WRONG") {
+        return { ok: true, confirmed: true };
+      }
+      const better = String(obj.better || obj["答案"] || "").trim();
+      if (!better) {
+        return { ok: true, confirmed: true };
+      }
+      const formatted = formatAiAnswererAnswer(better, env, cfg);
+      const key = ensembleVoteKey(env, formatted);
+      if (!key || key === ensembleVoteKey(env, answer)) {
+        return { ok: true, confirmed: true };
+      }
+      return { ok: true, confirmed: false, key, label: String(formatted), reason: String(obj.reason || obj["依据"] || "") };
+    } catch (error) {
+      return { ok: false, error: (error && error.message) || String(error) };
+    }
+  }
+  /**
+   * 多轮复核主流程，返回结构与 searchAnswerByAI 完全一致，
+   * 下游的 resolveSingle / resolveMultiple 不用改一行。
+   */
+  async function searchAnswerByAIEnsemble(cfg, env) {
+    const ens = normalizeEnsembleConfig(cfg.ensemble);
+    const model = cfg.model || "AI";
+    const startedAt = Date.now();
+    const deadline = startedAt + ens.budgetSeconds * 1000;
+    const brief = String(env.title || "").replace(/\s+/g, " ").trim().slice(0, 24);
+    const hasImages = cfg.supportImages !== false && Array.isArray(env.images) && env.images.length > 0;
+    // 图片题又慢又贵，默认只跑单轮，但提示词增强照样生效
+    const rounds = hasImages ? Math.min(ens.rounds, ens.imageRounds) : ens.rounds;
+    const verify = ens.verify && rounds > 1 && !hasImages;
+    const lenses = AI_ENSEMBLE_LENSES.slice(0, Math.max(1, Math.min(rounds, AI_ENSEMBLE_LENSES.length)));
+    while (lenses.length < rounds) {
+      lenses.push(AI_ENSEMBLE_LENSES[lenses.length % AI_ENSEMBLE_LENSES.length]);
+    }
+    logAi(
+      "[AI 多轮] 请求 " + model + (brief ? "：" + brief : "") +
+        "（" + rounds + " 轮" + (verify ? " + 复核" : "") + (ens.falsify && rounds > 1 && !hasImages ? " + 证伪" : "") +
+        "，预算 " + ens.budgetSeconds + "s）"
+    );
+
+    const info = {
+      url: resolveAiEndpoint(cfg.baseUrl),
+      name: "AI 多轮复核 · " + model,
+      homepage: "#",
+      results: [],
+      response: void 0,
+      data: void 0,
+      error: void 0
+    };
+    let requests = 0;
+    // 每轮的超时上限：既不超过用户设的单次超时，也不让某一轮把整题预算吃光
+    const capSeconds = Math.max(8, Math.min(Number(cfg.timeoutSeconds) || 60, Math.ceil((ens.budgetSeconds / Math.max(1, rounds)) * 1.6)));
+
+    const samples = await ensembleMapLimit(lenses, AI_ENSEMBLE_MAX_CONCURRENCY, async (lens, index) => {
+      if (Date.now() > deadline) {
+        return { ok: false, index, lens: lens.name, error: "超出时间预算，跳过" };
+      }
+      requests += 1;
+      return askAiEnsembleRound(cfg, env, lens, index, deadline, capSeconds);
+    });
+
+    const failed = samples.filter((s) => !s || !s.ok);
+    const firstSample = samples.find((s) => s && s.ok);
+    if (!firstSample) {
+      const reason = (failed[0] && failed[0].error) || "AI 没有返回可用答案";
+      logAi("[AI 多轮] 全部轮次失败：" + reason, "error");
+      info.error = "AI 答题请求失败：" + reason;
+      return info;
+    }
+
+    const tally = ensembleTally(samples);
+    info.response = firstSample.raw;
+    info.data = { model: cfg.model, rounds, lenses: lenses.map((l) => l.name) };
+    logAi(
+      "[AI 多轮] " + tally.valid + " 轮有效票：" +
+        tally.list.map((c) => String(c.label).slice(0, 16) + "×" + c.count).join(" / ") +
+        "（一致率 " + Math.round(tally.agree * 100) + "%）"
+    );
+
+    let final = tally.top;
+    let verified = false;
+    let criticReason = "";
+    let agreement = tally.agree;
+
+    // 全票一致就不复核了 —— 这一类题复核也问不出新东西，纯属烧钱
+    const unanimous = tally.valid > 1 && tally.top && tally.top.count === tally.valid;
+    if (verify && !unanimous) {
+      requests += 1;
+      const candidates = tally.list.slice(0, 3);
+      const critic = await askAiEnsembleCritic(cfg, env, candidates, deadline);
+      if (critic && critic.ok) {
+        verified = true;
+        criticReason = critic.reason || "";
+        const picked = tally.list.find((c) => c.key === critic.key);
+        if (picked) {
+          final = picked;
+          agreement = picked.count / Math.max(1, tally.valid);
+          logAi("[AI 多轮] 复核：维持 " + String(picked.label).slice(0, 30) + "（" + (critic.reason || "无理由").slice(0, 40) + "）");
+        } else if (!critic.fresh || critic.confidence >= 0.6) {
+          // 复核给出了候选之外的答案：只有它足够有把握才改判，否则宁可维持多数票
+          final = { key: critic.key, label: critic.label, count: 0, score: 0 };
+          agreement = 0;
+          logAi("[AI 多轮] 复核：改判为 " + String(critic.label).slice(0, 30) + "（" + (critic.reason || "无理由").slice(0, 40) + "）");
+        } else {
+          logAi("[AI 多轮] 复核给出的新答案把握不足，维持多数票", "warn");
+        }
+      } else if (critic) {
+        logAi("[AI 多轮] 复核失败：" + critic.error, "warn");
+      }
+    }
+
+    // 反方证伪：只对「已采纳但票不齐」的答案做，且改判门槛更高
+    if (ens.falsify && rounds > 1 && !hasImages && Date.now() < deadline) {
+      requests += 1;
+      const check = await askAiEnsembleFalsify(cfg, env, final.label, deadline);
+      if (check && check.ok && !check.confirmed) {
+        const second = tally.second;
+        const betterVotes = second && second.key === check.key ? second.count : 0;
+        if (betterVotes > 0 || agreement < 0.6) {
+          logAi("[AI 多轮] 证伪成立，改判为 " + String(check.label).slice(0, 30) + "（" + (check.reason || "").slice(0, 40) + "）");
+          final = { key: check.key, label: check.label, count: betterVotes, score: 0 };
+        } else {
+          logAi("[AI 多轮] 证伪提出异议但依据不足，维持原答案", "warn");
+        }
+      }
+    }
+
+    // 大面积分歧、又没有复核结论兜底时，按配置决定是硬着头皮答还是留空
+    if (agreement < 0.5 && !verified && ens.lowConfidence === "hold") {
+      logAi("[AI 多轮] 一致率仅 " + Math.round(agreement * 100) + "%，按设置不作答", "warn");
+      info.error = "多轮结果分歧过大（一致率 " + Math.round(agreement * 100) + "%），已按设置跳过此题";
+      return info;
+    }
+
+    info.cost = Date.now() - startedAt;
+    info.results.push({
+      question: env.title,
+      answer: final.label,
+      extra_data: {
+        from: info.name,
+        model: cfg.model,
+        rounds: tally.valid,
+        votes: tally.list.map((c) => String(c.label).slice(0, 40) + "×" + c.count).join(" / "),
+        agreement: Math.round(agreement * 100) / 100,
+        verified,
+        requests,
+        reason: criticReason || (final.reason || (tally.top && tally.top.reasons[0]) || ""),
+        raw: String(firstSample.raw || "").slice(0, 300)
+      }
+    });
+    // 多选只回一条（避免下游按组择优时把半对答案拼在一起），
+    // 其余题型把次高票挂后面：万一首选文本没匹配上选项，还能兜一次
+    if (env.type !== "multiple" && tally.second && tally.second.key !== final.key) {
+      info.results.push({
+        question: env.title,
+        answer: tally.second.label,
+        extra_data: { from: info.name, fallback: true, votes: tally.second.count }
+      });
+    }
+    logAi(
+      "[AI 多轮] 最终 " + String(final.label).slice(0, 40) +
+        "（" + tally.valid + " 轮 / " + requests + " 次请求 / " + ((Date.now() - startedAt) / 1e3).toFixed(1) + "s" +
+        (verified ? " / 已复核" : "") + "）"
+    );
+    return info;
+  }
   async function searchAnswerByAI(cfg, env) {
+    // 开了多轮复核就走多轮，单轮那条路完全不动（关掉就回到原来的行为）
+    const ensCfg = normalizeEnsembleConfig(cfg.ensemble);
+    if (ensCfg.enabled) {
+      return searchAnswerByAIEnsemble(Object.assign({}, cfg, { ensemble: ensCfg }), env);
+    }
     const model = cfg.model || "AI";
     const startedAt = Date.now();
     const brief = String(env.title || "").replace(/\s+/g, " ").trim().slice(0, 24);
@@ -5010,6 +5571,45 @@ var __publicField = (obj, key, value) => {
     ]);
     requestTypeSelect.value = cfg.requestType || "auto";
     const supportImagesCheckbox = lib.h("input", { type: "checkbox", checked: cfg.supportImages !== false, style: { marginRight: "6px" } });
+    /* ---- 多轮复核控件 ---- */
+    const ensCfg = normalizeEnsembleConfig(cfg.ensemble);
+    const ensembleEnabled = lib.h("input", { type: "checkbox", checked: !!ensCfg.enabled, style: { marginRight: "6px" } });
+    const ensemblePreset = lib.h("select", { className: "base-style-active-form-control", style: { padding: "4px 6px" } }, [
+      lib.h("option", { value: "fast" }, "快速 · 2 轮"),
+      lib.h("option", { value: "balanced" }, "均衡 · 3 轮 + 复核"),
+      lib.h("option", { value: "strict" }, "严格 · 5 轮 + 复核 + 证伪"),
+      lib.h("option", { value: "custom" }, "自定义")
+    ]);
+    ensemblePreset.value = ensCfg.preset;
+    const ensembleRounds = lib.h("input", { type: "number", min: "1", max: "5", step: "1", value: String(ensCfg.rounds), style: { width: "58px", padding: "4px 6px" } });
+    const ensembleVerify = lib.h("input", { type: "checkbox", checked: !!ensCfg.verify, style: { marginRight: "4px" } });
+    const ensembleFalsify = lib.h("input", { type: "checkbox", checked: !!ensCfg.falsify, style: { marginRight: "4px" } });
+    const ensembleLow = lib.h("select", { className: "base-style-active-form-control", style: { padding: "4px 6px" } }, [
+      lib.h("option", { value: "best" }, "用最高票（推荐）"),
+      lib.h("option", { value: "hold" }, "留空不作答")
+    ]);
+    ensembleLow.value = ensCfg.lowConfidence;
+    const ensembleHint = lib.h("div", { style: { fontSize: "11px", color: "#909399", lineHeight: "1.7", marginTop: "4px" } });
+    const refreshEnsembleHint = () => {
+      const rounds = Math.max(1, Number(ensembleRounds.value) || 1);
+      const extra = (ensembleVerify.checked && rounds > 1 ? 1 : 0) + (ensembleFalsify.checked && rounds > 1 ? 1 : 0);
+      ensembleHint.textContent =
+        "每题最多 " + (rounds + extra) + " 次请求；多轮之间会换提问角度（排除法 / 教材口径 / 反证），" +
+        "不只是重复问同一句。图片题固定只跑 1 轮。";
+    };
+    ensemblePreset.onchange = () => {
+      const preset = AI_ENSEMBLE_PRESETS[ensemblePreset.value];
+      if (preset) {
+        ensembleRounds.value = String(preset.rounds);
+        ensembleVerify.checked = preset.verify;
+        ensembleFalsify.checked = preset.falsify;
+      }
+      refreshEnsembleHint();
+    };
+    ensembleRounds.oninput = refreshEnsembleHint;
+    ensembleVerify.onchange = refreshEnsembleHint;
+    ensembleFalsify.onchange = refreshEnsembleHint;
+    refreshEnsembleHint();
     const systemPromptInput = createAiAnswererTextarea({ placeholder: "系统提示词" });
     systemPromptInput.value = cfg.systemPrompt || AI_ANSWERER_DEFAULT_SYSTEM_PROMPT;
     systemPromptInput.style.minHeight = "118px";
@@ -5042,7 +5642,17 @@ var __publicField = (obj, key, value) => {
       supportImages: supportImagesCheckbox.checked,
       retry: cfg.retry,
       systemPrompt: systemPromptInput.value,
-      extraPrompt: extraPromptInput.value
+      extraPrompt: extraPromptInput.value,
+      ensemble: {
+        enabled: ensembleEnabled.checked,
+        preset: ensemblePreset.value,
+        rounds: Math.max(1, Math.min(5, Number(ensembleRounds.value) || 3)),
+        verify: ensembleVerify.checked,
+        falsify: ensembleFalsify.checked,
+        budgetSeconds: (AI_ENSEMBLE_PRESETS[ensemblePreset.value] || cfg.ensemble || {}).budgetSeconds || 60,
+        imageRounds: (cfg.ensemble && cfg.ensemble.imageRounds) || 1,
+        lowConfidence: ensembleLow.value
+      }
     });
     const validateDraft = (draft) => {
       if (!draft.baseUrl) {
@@ -5072,7 +5682,7 @@ var __publicField = (obj, key, value) => {
         }
         btn.disabled = true;
         setStatus("#909399", "⏳ 正在请求 AI 接口，请稍候…");
-        const info = await searchAnswerByAI(Object.assign({}, draft, { enabled: true }), {
+        const info = await searchAnswerByAI(Object.assign({}, draft, { enabled: true, ensemble: Object.assign({}, draft.ensemble, { enabled: false }) }), {
           type: "single",
           title: "测试题：中国的首都是哪座城市？",
           options: "A. 上海\nB. 北京\nC. 广州\nD. 深圳"
@@ -5114,6 +5724,24 @@ var __publicField = (obj, key, value) => {
           supportImagesCheckbox,
           lib.h("span", "图片题交给 AI（模型需支持视觉）")
         ]),
+        lib.h("div", { className: "separator secondary", style: { margin: "14px 0px 10px" } }, "多轮复核（提高正确率）"),
+        lib.h("div", { style: { display: "flex", alignItems: "center", marginBottom: "8px", fontSize: "13px" } }, [
+          ensembleEnabled,
+          lib.h("span", "开启多轮复核 —— 同一道题换几个角度问，票不齐时再复核一遍")
+        ]),
+        lib.h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "6px", fontSize: "12px" } }, [
+          lib.h("span", { style: { color: "#666" } }, "档位"),
+          ensemblePreset,
+          lib.h("span", { style: { color: "#666", marginLeft: "6px" } }, "轮数"),
+          ensembleRounds,
+          lib.h("label", { style: { display: "flex", alignItems: "center", marginLeft: "6px", cursor: "pointer" } }, [ensembleVerify, lib.h("span", "分歧时复核")]),
+          lib.h("label", { style: { display: "flex", alignItems: "center", marginLeft: "6px", cursor: "pointer" } }, [ensembleFalsify, lib.h("span", "反方证伪")])
+        ]),
+        lib.h("div", { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", marginBottom: "2px" } }, [
+          lib.h("span", { style: { color: "#666" } }, "分歧过大时"),
+          ensembleLow
+        ]),
+        ensembleHint,
         createAiAnswererFormField("系统提示词", systemPromptInput, "控制作答格式，一般无需修改"),
         createAiAnswererFormField("附加要求（可选）", extraPromptInput, "会追加到系统提示词后"),
         status

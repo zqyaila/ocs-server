@@ -89,6 +89,17 @@
       </label>
     </div>
 
+    <div class="field">
+      <label for="ensPreset">多轮复核（提高正确率）</label>
+      <select id="ensPreset">
+        <option value="off">关闭 · 每题 1 次请求</option>
+        <option value="fast">快速 · 2 轮 + 复核</option>
+        <option value="balanced">均衡 · 3 轮 + 复核</option>
+        <option value="strict">严格 · 5 轮 + 复核 + 证伪</option>
+      </select>
+      <div class="hint" id="ensHint">多轮之间换提问角度（排除法 / 教材口径 / 反证），票不齐时再让模型复核一遍。</div>
+    </div>
+
     <div class="row">
       <button id="btnTest">测试连接</button>
       <button class="primary" id="btnSaveAi">保存</button>
@@ -163,6 +174,8 @@ async function load() {
   $('temp').value = c.temperature;
   $('maxTokens').value = c.maxTokens;
   $('supportImages').checked = c.supportImages;
+  const ens = c.ensemble || {};
+  $('ensPreset').value = ens.enabled ? (['fast', 'balanced', 'strict'].includes(ens.preset) ? ens.preset : 'balanced') : 'off';
   $('apiKey').placeholder = c.hasKey ? '已保存，留空表示不改' : 'sk-...';
   if (!c.hasKey) {
     $('keyHint').textContent = '保存在服务器上，不会回传到浏览器';
@@ -191,6 +204,17 @@ $('btnSaveAi').onclick = async () => {
     maxTokens: Number($('maxTokens').value) || 1024,
     supportImages: $('supportImages').checked
   };
+  const ensPreset = $('ensPreset').value;
+  const ENS_MAP = {
+    fast: { rounds: 2, verify: true, falsify: false, budgetSeconds: 30 },
+    balanced: { rounds: 3, verify: true, falsify: false, budgetSeconds: 60 },
+    strict: { rounds: 5, verify: true, falsify: true, budgetSeconds: 110 }
+  };
+  if (ensPreset === 'off') {
+    body.ensemble = { enabled: false };
+  } else {
+    body.ensemble = Object.assign({ enabled: true, preset: ensPreset, imageRounds: 1, lowConfidence: 'best' }, ENS_MAP[ensPreset] || ENS_MAP.balanced);
+  }
   const key = $('apiKey').value.trim();
   if (key) body.apiKey = key;
   if (!$('baseUrl').value.trim()) return msg('aiMsg', '请先填接口地址');

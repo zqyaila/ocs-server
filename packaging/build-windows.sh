@@ -48,7 +48,9 @@ cp "$ROOT/launch.js" "$ROOT/package.json" "$STAGING/app/"
 cp "$ROOT/README.md" "$STAGING/app/" 2>/dev/null || true
 cp "$ROOT/AI答题说明.md" "$STAGING/app/" 2>/dev/null || true
 cp "$ROOT/多用户说明.md" "$STAGING/app/" 2>/dev/null || true
+cp "$ROOT/多轮复核说明.md" "$STAGING/app/" 2>/dev/null || true
 cp -r "$ROOT/src" "$STAGING/app/src"
+cp -r "$ROOT/scripts" "$STAGING/app/scripts"
 cp -r "$ROOT/userscript" "$STAGING/app/userscript"
 cp -r "$ROOT/node_modules/playwright-core" "$STAGING/app/node_modules/playwright-core"
 # 类型声明运行时用不到，省 2MB

@@ -81,7 +81,18 @@ const DEFAULTS = {
     supportImages: true,
     retry: 1,
     systemPrompt: '',
-    extraPrompt: ''
+    extraPrompt: '',
+    // 多轮复核：同一道题换角度多问几次再投票，分歧时让模型自己复核一遍
+    ensemble: {
+      enabled: false,
+      preset: 'balanced',
+      rounds: 3,
+      verify: true,
+      falsify: false,
+      budgetSeconds: 60,
+      imageRounds: 1,
+      lowConfidence: 'best'
+    }
   },
   // 多账号：注册、邀请码、每个账号能建几个挂机号
   auth: {

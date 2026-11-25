@@ -14,11 +14,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "OCS"
       VALUE "FileDescription", "OCS 网课助手"
-      VALUE "FileVersion", "2.9.0"
+      VALUE "FileVersion", "2.9.1"
       VALUE "InternalName", "ocs-server"
       VALUE "OriginalFilename", "OCS网课助手.exe"
       VALUE "ProductName", "OCS 网课助手"
-      VALUE "ProductVersion", "2.9.0"
+      VALUE "ProductVersion", "2.9.1"
     END
   END
   BLOCK "VarFileInfo"
